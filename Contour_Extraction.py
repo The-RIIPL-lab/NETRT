@@ -77,7 +77,7 @@ class ContourExtraction:
         # Build Struct masks
         # increment make value to make NOT binary to rep colors in JPEG image.
         mask_dict = {}
-        i = 25
+        i = 1
 
         for struct in structures:
 

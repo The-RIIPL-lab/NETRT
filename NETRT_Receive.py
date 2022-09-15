@@ -39,8 +39,8 @@ parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 
 # About the destination server
 parser.add_argument('-dp', type=int, default=9003)
-parser.add_argument('-dip', default="ansirxnat.medeng.wfubmc.edu")
-parser.add_argument('-daet', help='AE title of this server', default='TEST')
+parser.add_argument('-dip', default="152.11.105.191")
+parser.add_argument('-daet', help='AE title of this server', default='RIIPLXNAT')
 parser.add_argument('-v', default=False)
 args = parser.parse_args()
 
@@ -176,12 +176,7 @@ def handler(a, b):
     send_files_overlay.send_dicom_folder()
 
     print('Removing %s ' % latest_subdir)
-
-    try: 
-        clean_up_directory(latest_subdir)
-    except:
-        print("Unable to delete all contents of %s " % latest_subdir)
-
+    clean_up_directory(dcm_path)
     print(" - ")
     return True
 
@@ -189,6 +184,7 @@ def clean_up_directory(delete_this_directory):
     for root, dirs, files in os.walk(delete_this_directory):
         for f in files:
             os.unlink(os.path.join(root, f))
+    for root, dirs, files in os.walk(delete_this_directory):
         for d in dirs:
             shutil.rmtree(os.path.join(root, d))
     return True
@@ -210,7 +206,7 @@ def create_new_application_entity():
     return ae
 
 def int_handler(signum, frame):
-    print("Exiting gracefully")
+    print("\nExiting gracefully")
     sys.exit(0)
 
 def main():
@@ -241,13 +237,10 @@ def main():
             if count > len(sequence_nums):
                 handler('a', 'b')
 
-print("\n",message, """
- - local_port : {}
- - local_ip : {}
- - local_aetitle : {}
- - dest_port : {}
- - nest_ip : {}
- - dest_aetitle""".format(local_port, local_ip, local_aetitle, dest_port, dest_ip))
+print("\n",message)
+print(""" - OPEN TO RECIEVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
+print(""" - FORWARDING TO > {} IP: {}:{}""".format(dest_aetitle, dest_ip, dest_port))
+
 
 # Let's run the main function 
 if __name__ == "__main__":
