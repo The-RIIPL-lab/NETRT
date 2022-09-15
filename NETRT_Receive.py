@@ -1,4 +1,4 @@
-import os
+import os, sys
 import argparse
 from unicodedata import name
 from pydicom.filewriter import write_file_meta_info
@@ -7,6 +7,7 @@ import numpy as np
 # from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 from pynetdicom.sop_class import Verification
+from pynetdicom import _config
 import signal
 import time
 import re
@@ -17,6 +18,10 @@ import JPEGToDicom
 import PIL.Image
 import numpy as np
 import pydicom
+import shutil
+
+# Dump raw data into file
+#_config.STORE_RECV_CHUNKED_DATASET = True
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts,
@@ -64,20 +69,22 @@ def handle_echo(event):
 def handle_store(event):
     try:
         # make folders only if the number of files received is less than one
-        if len(sequence_nums) < 1:
-            extract_accession = f'Accession_{event.dataset.AccessionNumber}'
-
+        #if len(sequence_nums) < 1:
+        extract_accession = f'Accession_{event.dataset.AccessionNumber}'
+        if os.path.isdir(extract_accession) == False:
             os.makedirs(extract_accession, exist_ok=True)
 
-            # get the paths to the DCM and structure files
-            dcm_folder = os.path.join(extract_accession, 'DCM')
-            structure_folder = os.path.join(extract_accession, 'Structure')
-            jpeg_folder = os.path.join(extract_accession, 'JPEG_Dicoms')
+        # get the paths to the DCM and structure files
+        dcm_folder = os.path.join(extract_accession, 'DCM')
+        structure_folder = os.path.join(extract_accession, 'Structure')
+        jpeg_folder = os.path.join(extract_accession, 'JPEG_Dicoms')
 
-            # make the folders
-            os.makedirs(dcm_folder)
-            os.makedirs(structure_folder)
-            os.makedirs(jpeg_folder)
+        # make the folders
+        folder_list=[ dcm_folder, structure_folder, jpeg_folder ]
+        for folder in folder_list:
+            if os.path.isdir(folder)==False:
+                print("Creating %s" % folder)
+                os.mkdir(folder)
 
         # get most recently created parent folder since it errors out sometimes otherwise
         all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
@@ -123,27 +130,17 @@ def handle_store(event):
     except Exception as err:
         print(err)
 
-    print(' - Storage complete')
     return 0x0000
 
-
+"""Handle a CONN_CLOSE event"""
 def handle_conn_close(event):
-    """Handle a CONN_CLOSE event"""
-    # print("Closing connection with IP Address: ", event.address)
     address, sequence_num = event.address
 
     sequence_nums.append(sequence_num)
-
     return sequence_nums
 
-
+"""Handle completed sequence storage"""
 def handler(a, b):
-
-    # print a message to the console
-    # print("\nShut er down")
-
-    # shutdown the application
-    ae.shutdown()
 
     # get most recently created folder since it errors out sometimes otherwise
     all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
@@ -178,7 +175,22 @@ def handler(a, b):
     send_files_overlay = Send_Files.SendFiles(addition_path)
     send_files_overlay.send_dicom_folder()
 
+    print('Removing %s ' % latest_subdir)
+
+    try: 
+        clean_up_directory(latest_subdir)
+    except:
+        print("Unable to delete all contents of %s " % latest_subdir)
+
     print(" - ")
+    return True
+
+def clean_up_directory(delete_this_directory): 
+    for root, dirs, files in os.walk(delete_this_directory):
+        for f in files:
+            os.unlink(os.path.join(root, f))
+        for d in dirs:
+            shutil.rmtree(os.path.join(root, d))
     return True
 
 
@@ -188,26 +200,34 @@ handlers = [
     (evt.EVT_CONN_CLOSE, handle_conn_close)
     ]
 
-# The main process is intended to 
-def main():
-
-    # Create a new application entity to handle incoming images
-    global ae
+"""Returns a new Application Entity with supported contexts"""
+def create_new_application_entity():
     ae = AE()
     ae.add_supported_context(Verification)
     storage_sop_classes = [cx.abstract_syntax for cx in AllStoragePresentationContexts]
-
-    # add the various CT and MR contexts
     for uid in storage_sop_classes:
         ae.add_supported_context(uid, ALL_TRANSFER_SYNTAXES)
+    return ae
 
-    # Start the server in a non-blocking way
-    service = ae.start_server((local_ip, local_port), evt_handlers=handlers, block=False, ae_title=local_aetitle)
+def int_handler(signum, frame):
+    print("Exiting gracefully")
+    sys.exit(0)
 
-    # Define a signal handler
-    signal.signal(signal.SIGINT, handler)
+def main():
+    ae = create_new_application_entity()
+
+    # Create a CTRL+C signal to stop the server
+    signal.signal(signal.SIGINT, int_handler)
+
+    # Start the server in a blocking way
+    print(" ---- Starting Server -----")
+    service = ae.start_server(
+        (local_ip, local_port), 
+        evt_handlers=handlers, 
+        block=False, 
+        ae_title=local_aetitle)
+
     count = 0
-
     while True:
         print(f"{count}", end="\r", flush=True)
         time.sleep(0.2)
@@ -221,7 +241,6 @@ def main():
             if count > len(sequence_nums):
                 handler('a', 'b')
 
-
 print("\n",message, """
  - local_port : {}
  - local_ip : {}
@@ -230,4 +249,6 @@ print("\n",message, """
  - nest_ip : {}
  - dest_aetitle""".format(local_port, local_ip, local_aetitle, dest_port, dest_ip))
 
-main()
+# Let's run the main function 
+if __name__ == "__main__":
+    main()

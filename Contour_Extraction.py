@@ -7,11 +7,11 @@ import os.path
 from scipy.ndimage.measurements import center_of_mass
 from math import isnan
 from pydicom.pixel_data_handlers.util import apply_modality_lut
-import cv2
-from skimage.measure import find_contours
+#import cv2
 import PIL.Image
 import re
 
+plt.switch_backend('agg')
 
 class ContourExtraction:
 
@@ -40,7 +40,6 @@ class ContourExtraction:
         files = os.listdir(self.dcm_path)
         files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
         
-        print(files)
         print("file count: {}".format(len(files)))
 
         # skip files with no SliceLocation (eg scout views)
@@ -78,20 +77,17 @@ class ContourExtraction:
         # Build Struct masks
         # increment make value to make NOT binary to rep colors in JPEG image.
         mask_dict = {}
-        i = 1
+        i = 25
 
         for struct in structures:
 
             try:
 
-                print(struct)
-
+                #print(struct)
                 # load by name
                 mask_3d = RTstruct.get_roi_mask_by_name(struct)
-
                 # Assign mask value
                 mask_dict[struct] = np.where(mask_3d > 0, i, 0)
-
                 i += 100
 
             except Exception as err:
@@ -102,7 +98,7 @@ class ContourExtraction:
             slice_str = str(x)
             
             # add padding 0s dynamically
-            if len(slice_str) < 5:
+            if len(slice_str) < 5: 
                slice_str  = '0' * (5 - len(slice_str)) + slice_str 
                   
             plt.figure(figsize=(10, 10))
@@ -131,12 +127,17 @@ class ContourExtraction:
                 mask_image_dict[mask] = plt.imshow(mask_slice, alpha=0.6,
                                                    vmin=0,
                                                    vmax=1000,
-                                                   cmap=plt.cm.flag)
+                                                   cmap=plt.cm.prism)
 
             output_directory = self.dcm_path.replace('DCM', 'Extraction')
 
             if os.path.isdir(output_directory) == False:
                 os.mkdir(output_directory)
 
-            plt.savefig(f'{output_directory}/{str(slice_str)}.jpeg', bbox_inches='tight', pad_inches=0)
+            print(" - Creating JPEG image %s" % f"{str(slice_str)}.jpeg")
+            try:
+                plt.savefig(f'{output_directory}/{str(slice_str)}.jpeg', bbox_inches='tight', pad_inches=0)
+            except:
+                print(' - Unable to create image %s' % f'{str(slice_str)}.jpeg')
+                
             plt.close()

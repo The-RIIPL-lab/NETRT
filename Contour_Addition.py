@@ -8,9 +8,10 @@ from pydicom.pixel_data_handlers.numpy_handler import pack_bits
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 from scipy.ndimage.measurements import center_of_mass
 from math import isnan
-from skimage.measure import find_contours
+#from skimage.measure import find_contours
 import re
 
+plt.switch_backend('agg')
 
 class ContourAddition:
 
@@ -71,20 +72,20 @@ class ContourAddition:
             if len(slice_str) < 5:
                slice_str  = '0' * (5 - len(slice_str)) + slice_str
                
-            print("DEBUG: building layer for slice: ", slice_number)
+            #print("DEBUG: building layer for slice: ", slice_number)
 
             hex_start = 0x6000
 
             for mask in mask_dict.keys():
-                print(" --- Mask: ", mask)
+                #print(" --- Mask: ", mask)
                 mask_array = mask_dict[mask]
                 mask_slice = mask_array[:, :, slice_number]
                 mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
 
                 # pack bytes
-                print(" --- Adding new Overlay ROI: ", hex(hex_start))
+                #print(" --- Adding new Overlay ROI: ", hex(hex_start))
                 packed_bytes = pack_bits(mask_slice)
-                ds.StudyDescription = "CT with RadOnc overlay"
+                ds.SeriesDescription = "CT with RadOnc overlay"
                 ds.SeriesNumber = ds.SeriesNumber + 100
 
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0040), 'CS', 'R')
@@ -100,7 +101,7 @@ class ContourAddition:
                 hex_start = hex_start + 2
 
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
-
+                print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
                 ds.save_as(out_fn)
             return ds
 

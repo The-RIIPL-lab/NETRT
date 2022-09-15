@@ -35,19 +35,35 @@ class JPEGToDICOM_Class:
 
             ds = pydicom.dcmread(reference_dicom)
             
+            ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+            ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
+            ds.file_meta.MediaStorageSOPInstanceUID = "1.2.3"
+            ds.file_meta.ImplementationClassUID = "1.2.3.4"
+            
             counter = counter + 1
             
             ds.SeriesNumber = ds.SeriesNumber + 75
+            ds.SeriesDescription = "Dicom RT Contours JPEG"
             
             jpeg_file = cv2.imread(jpeg_file)
             
             ds.Rows, ds.Columns, dummy = jpeg_file.shape
 
+            if jpeg_file.shape[1] == 3:
+                ds.SamplesPerPixel = 3
+            else:
+                ds.SamplesPerPixel = 1
+
             ds.PhotometricInterpretation = 'YBR_FULL_422'
-            ds.SamplesPerPixel = 3
             ds.BitsStored = 8
             ds.BitsAllocated = 8
             ds.HighBit = 7
             ds.PixelData = jpeg_file.tobytes()
+            ds.PixelRepresentation = 0
+            ds.PlanarConfiguration = 0
+            ds.NumberOfFrames = 1
+            ds.is_little_endian = True
+            ds.is_implicit_VR = False
 
+            print(" - Creating %s" % f"{save_name}.dcm")
             ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)
