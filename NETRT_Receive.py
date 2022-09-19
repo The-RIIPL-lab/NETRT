@@ -248,11 +248,14 @@ def fileWatcherService(pd,currently_processing):
             abs_pd=os.path.join(
                 os.getcwd(),
                 os.path.dirname(pd))
-            handler(abs_pd)
-            print("DEBUG: Removing full Accession directory")
-            shutil.rmtree(abs_pd)
-            currently_processing.remove(pd)
-            return True
+            if handler(abs_pd):
+                print(" > Removing full Accession directory")
+                shutil.rmtree(abs_pd)
+                currently_processing.remove(pd)
+                return True
+            else:
+                print(" X: DEBUG error. unable to complete handler()")
+                return False
     else:
         print("{} is currently processing".format(pd))
         return False
@@ -274,6 +277,7 @@ def main():
 
     global currently_processing
     currently_processing=[]
+    threads={}
     while True:
 
         # Get a list of Accession directories
@@ -282,11 +286,20 @@ def main():
             for pd in processing_dirs:
                 if pd not in currently_processing:
                     print("\n > New directory found: %s" % pd)
-                    thread = threading.Thread(target=fileWatcherService,
+                    acc=os.path.dirname(pd)
+                    threads[acc] = threading.Thread(target=fileWatcherService,
                         args=(pd,currently_processing))
-                    thread.start()
+                    time.sleep(1)
+                    threads[acc].start()
                     print("\n --- Thread started ---")
-        time.sleep(5)
+
+        time.sleep(1)
+        for t in list(threads.keys()):
+            if threads[t].is_alive() == False:
+                del threads[t]
+
+        print(list(threads))
+        
 
 
         # if length of received files is greater than 0, execute this block
