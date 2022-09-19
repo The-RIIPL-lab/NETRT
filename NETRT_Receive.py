@@ -1,3 +1,6 @@
+from genericpath import isdir
+from logging.handlers import WatchedFileHandler
+from multiprocessing import cpu_count
 import os, sys
 import argparse
 from unicodedata import name
@@ -52,8 +55,6 @@ dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
 
-sequence_nums = []
-
 # If started with verbose flag,
 # run in debug mode
 if args.v:
@@ -62,16 +63,19 @@ if args.v:
 
 
 def handle_echo(event):
-    """Handle a C-ECHO request event."""
+    print(" > Echo event!", end='\n')
     return 0x0000
 
 
 def handle_store(event):
+
     try:
-        # make folders only if the number of files received is less than one
-        #if len(sequence_nums) < 1:
+        # Create a new accession folder
         extract_accession = f'Accession_{event.dataset.AccessionNumber}'
+        extract_accession = os.path.join('.', extract_accession)
+        
         if os.path.isdir(extract_accession) == False:
+            print("Creating folder: %s" % extract_accession)
             os.makedirs(extract_accession, exist_ok=True)
 
         # get the paths to the DCM and structure files
@@ -134,13 +138,14 @@ def handle_store(event):
 
 """Handle a CONN_CLOSE event"""
 def handle_conn_close(event):
-    address, sequence_num = event.address
-
-    sequence_nums.append(sequence_num)
-    return sequence_nums
+    #address, sequence_num = event.address
+    #sequence_nums.append(sequence_num)
+    return 0x0000
 
 """Handle completed sequence storage"""
 def handler(a, b):
+    print(list(a))
+    print(list(b))
 
     # get most recently created folder since it errors out sometimes otherwise
     all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
@@ -209,7 +214,40 @@ def int_handler(signum, frame):
     print("\nExiting gracefully")
     sys.exit(0)
 
+# return a list of directories that match the Accession Pattern
+def find_accession_directories(my_dir:str):
+    Accession_directories = [os.path.join(d,'DCM') for d in os.listdir(my_dir) if d.startswith('Accession')]
+    return(Accession_directories)
+
+def fileInDirectory(my_dir: str):
+    onlyfiles = [f for f in os.listdir(my_dir) if os.path.isfile(os.path.join(my_dir, f))]
+    return(onlyfiles)
+
+# function comparing two lists
+def listComparison(OriginalList: list, NewList: list):
+    differencesList = [x for x in NewList if x not in OriginalList]
+    return(differencesList)
+
+def fileWatcher(watchDirectory: str, pollTime: int):
+    while True:
+        if 'watching' not in locals(): 
+            previousFileList = fileInDirectory(watchDirectory)
+            watching = 1
+        
+        time.sleep(pollTime)
+        newFileList = fileInDirectory(watchDirectory)
+        fileDiff = listComparison(previousFileList, newFileList)
+        previousFileList = newFileList
+
+        if watching == 1 & len(fileDiff) > 0:
+            print("Downloading... {}".format(len(newFileList)), end="\r")
+
+        if len(fileDiff) == 0:
+            print("Download Complete")
+            return True
+
 def main():
+
     ae = create_new_application_entity()
 
     # Create a CTRL+C signal to stop the server
@@ -223,24 +261,35 @@ def main():
         block=False, 
         ae_title=local_aetitle)
 
-    count = 0
+    count=0
     while True:
-        print(f"{count}", end="\r", flush=True)
-        time.sleep(0.2)
+        print(" > Watcher count %i" % count, end = "\r")
+        processing_dirs = find_accession_directories(".")
+        if len(processing_dirs) > 0:
+            print("Watching: {}".format(processing_dirs))
+
+            for pd in processing_dirs:
+                result=fileWatcher(pd, 3)
+                if result:
+                    print("DEBUG: Running File Handler")
+                    print(" > Dicom Directory: %s" % pd)
+                    #handler('a', 'b')
+                    shutil.rmtree(pd)
+        time.sleep(5)
+        count+=1
+
 
         # if length of received files is greater than 0, execute this block
-        if len(sequence_nums) > 0:
-
-            count += 1
-
-            # if length of received files is less than count, execute this block
-            if count > len(sequence_nums):
-                handler('a', 'b')
+        # if len(sequence_nums) > 0:
+        #     count += 1
+        #     # if length of received files is less than count, execute this block
+        #     if count > len(sequence_nums):
+        #         print("Executing Handler")
+        #         #handler('a', 'b')
 
 print("\n",message)
 print(""" - OPEN TO RECIEVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
 print(""" - FORWARDING TO > {} IP: {}:{}""".format(dest_aetitle, dest_ip, dest_port))
-
 
 # Let's run the main function 
 if __name__ == "__main__":
