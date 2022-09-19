@@ -22,6 +22,7 @@ import PIL.Image
 import numpy as np
 import pydicom
 import shutil
+import threading
 
 # Dump raw data into file
 #_config.STORE_RECV_CHUNKED_DATASET = True
@@ -75,7 +76,7 @@ def handle_store(event):
         extract_accession = os.path.join('.', extract_accession)
         
         if os.path.isdir(extract_accession) == False:
-            print("Creating folder: %s" % extract_accession)
+            print("\nCreating folder: %s" % extract_accession)
             os.makedirs(extract_accession, exist_ok=True)
 
         # get the paths to the DCM and structure files
@@ -143,13 +144,16 @@ def handle_conn_close(event):
     return 0x0000
 
 """Handle completed sequence storage"""
-def handler(a, b):
-    print(list(a))
-    print(list(b))
+def handler(a):
+
+    # Announce the pipeline
+    print("Starting pipeline")
 
     # get most recently created folder since it errors out sometimes otherwise
-    all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
-    latest_subdir = max(all_subdirs, key=os.path.getmtime)
+    #all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
+    #latest_subdir = max(all_subdirs, key=os.path.getmtime)
+
+    latest_subdir=a
 
     # get the path to the DCM folder
     dcm_path = os.path.join(latest_subdir, 'DCM')
@@ -179,21 +183,8 @@ def handler(a, b):
     
     send_files_overlay = Send_Files.SendFiles(addition_path)
     send_files_overlay.send_dicom_folder()
-
-    print('Removing %s ' % latest_subdir)
-    clean_up_directory(dcm_path)
-    print(" - ")
+    print("Completing pipeline")
     return True
-
-def clean_up_directory(delete_this_directory): 
-    for root, dirs, files in os.walk(delete_this_directory):
-        for f in files:
-            os.unlink(os.path.join(root, f))
-    for root, dirs, files in os.walk(delete_this_directory):
-        for d in dirs:
-            shutil.rmtree(os.path.join(root, d))
-    return True
-
 
 handlers = [
     (evt.EVT_C_STORE, handle_store),
@@ -211,7 +202,7 @@ def create_new_application_entity():
     return ae
 
 def int_handler(signum, frame):
-    print("\nExiting gracefully")
+    print("\n ---- Stopping Server ----")
     sys.exit(0)
 
 # return a list of directories that match the Accession Pattern
@@ -246,6 +237,26 @@ def fileWatcher(watchDirectory: str, pollTime: int):
             print("Download Complete")
             return True
 
+def fileWatcherService(pd,currently_processing):
+    if pd not in currently_processing:
+        # Start the watcher
+        print(" - Now watching: {}".format(pd))
+        currently_processing.append(pd)
+        result=fileWatcher(pd, 3)
+        if result:
+            print(" > Dicom Directory: %s" % pd)
+            abs_pd=os.path.join(
+                os.getcwd(),
+                os.path.dirname(pd))
+            handler(abs_pd)
+            print("DEBUG: Removing full Accession directory")
+            shutil.rmtree(abs_pd)
+            currently_processing.remove(pd)
+            return True
+    else:
+        print("{} is currently processing".format(pd))
+        return False
+
 def main():
 
     ae = create_new_application_entity()
@@ -261,22 +272,21 @@ def main():
         block=False, 
         ae_title=local_aetitle)
 
-    count=0
+    global currently_processing
+    currently_processing=[]
     while True:
-        print(" > Watcher count %i" % count, end = "\r")
+
+        # Get a list of Accession directories
         processing_dirs = find_accession_directories(".")
         if len(processing_dirs) > 0:
-            print("Watching: {}".format(processing_dirs))
-
             for pd in processing_dirs:
-                result=fileWatcher(pd, 3)
-                if result:
-                    print("DEBUG: Running File Handler")
-                    print(" > Dicom Directory: %s" % pd)
-                    #handler('a', 'b')
-                    shutil.rmtree(pd)
+                if pd not in currently_processing:
+                    print("\n > New directory found: %s" % pd)
+                    thread = threading.Thread(target=fileWatcherService,
+                        args=(pd,currently_processing))
+                    thread.start()
+                    print("\n --- Thread started ---")
         time.sleep(5)
-        count+=1
 
 
         # if length of received files is greater than 0, execute this block
