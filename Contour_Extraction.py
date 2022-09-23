@@ -59,10 +59,6 @@ class ContourExtraction:
         ps = slices[0].PixelSpacing
         ss = slices[0].SliceThickness
 
-        ax_aspect = ps[1]/ps[0]
-        sag_aspect = ps[1]/ss
-        cor_aspect = ss/ps[0]
-
         # create 3D array
         img_shape = list(slices[0].pixel_array.shape)
         img_shape.append(len(slices))

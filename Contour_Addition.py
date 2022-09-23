@@ -15,10 +15,12 @@ plt.switch_backend('agg')
 
 class ContourAddition:
 
-    def __init__(self, dcm_path, struct_path):
+    def __init__(self, dcm_path, struct_path, debug=False, RAND_ID='', RAND_UID=''):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
-
+        self.debug  = debug
+        self.RAND_ID = RAND_ID
+        self.RAND_UID = RAND_UID
 
     def process(self):
 
@@ -97,6 +99,19 @@ class ContourAddition:
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x3000), 'OW', packed_bytes)
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
+
+                if self.debug:
+                    remove_these_tags = ['AccessionNumber']
+                    for tag in remove_these_tags:
+                        if tag in ds:
+                            delattr(ds, tag)
+
+                    ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
+                    ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
+                    ds.StudyInstanceUID = self.RAND_UID
+                    
+
+
 
                 hex_start = hex_start + 2
 

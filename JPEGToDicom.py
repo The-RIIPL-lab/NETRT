@@ -5,10 +5,13 @@ import re
 
 class JPEGToDICOM_Class:
 
-    def __init__(self, jpg_folder_path, extraction_path, dcm_path):
+    def __init__(self, jpg_folder_path, extraction_path, dcm_path, debug=False, RAND_ID='', RAND_UID=''):
         self.jpg_folder_path = jpg_folder_path
         self.extraction_path = extraction_path
         self.dcm_path = dcm_path
+        self.debug = debug
+        self.RAND_ID = RAND_ID
+        self.RAND_UID = RAND_UID
 
     def process(self):
 
@@ -36,7 +39,8 @@ class JPEGToDICOM_Class:
             ds = pydicom.dcmread(reference_dicom)
             
             ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
-            ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
+            #ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
+            ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.7.4'
             ds.file_meta.MediaStorageSOPInstanceUID = "1.2.3"
             ds.file_meta.ImplementationClassUID = "1.2.3.4"
             
@@ -64,6 +68,16 @@ class JPEGToDICOM_Class:
             ds.NumberOfFrames = 1
             ds.is_little_endian = True
             ds.is_implicit_VR = False
+
+            if self.debug:
+                remove_these_tags = ['AccessionNumber']
+                for tag in remove_these_tags:
+                    if tag in ds:
+                        delattr(ds, tag)
+
+                ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
+                ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
+                ds.StudyInstanceUID = self.RAND_UID
 
             print(" - Creating %s" % f"{save_name}.dcm")
             ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)

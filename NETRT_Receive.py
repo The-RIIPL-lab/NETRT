@@ -6,6 +6,7 @@ import argparse
 from unicodedata import name
 from pydicom.filewriter import write_file_meta_info
 from pydicom import dcmread
+from pydicom.uid import generate_uid
 import numpy as np
 # from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
@@ -23,6 +24,9 @@ import numpy as np
 import pydicom
 import shutil
 import threading
+import random
+import string
+
 
 # Dump raw data into file
 #_config.STORE_RECV_CHUNKED_DATASET = True
@@ -45,6 +49,11 @@ parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 parser.add_argument('-dp', type=int, default=9003)
 parser.add_argument('-dip', default="152.11.105.191")
 parser.add_argument('-daet', help='AE title of this server', default='RIIPLXNAT')
+
+# Add
+parser.add_argument('-D', default=False)
+
+# Verbose mode versus not
 parser.add_argument('-v', default=False)
 args = parser.parse_args()
 
@@ -56,12 +65,17 @@ dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
 
+global DEBUG
+DEBUG = args.D
+
 # If started with verbose flag,
 # run in debug mode
 if args.v:
     print(" > Verbose mode is on.")
     debug_logger()
 
+if args.D:
+    print(" > DEBUG mode is on. \nUID information will be removed and Patient Info will be modified ")
 
 def handle_echo(event):
     print(" > Echo event!", end='\n')
@@ -149,6 +163,17 @@ def handler(a):
     # Announce the pipeline
     print("Starting pipeline")
 
+    if DEBUG:
+        global RAND_ID
+        RAND_ID=''.join(random.choice(string.ascii_letters) for x in range(8))
+        print("RANDOM ID is %s" % RAND_ID)
+    else:
+        RAND_ID=""
+
+    if DEBUG:
+        RAND_UID=generate_uid(entropy_srcs=[RAND_ID])
+        print(RAND_UID)
+
     # get most recently created folder since it errors out sometimes otherwise
     #all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
     #latest_subdir = max(all_subdirs, key=os.path.getmtime)
@@ -160,28 +185,31 @@ def handler(a):
 
     # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
+    print("DEBUG")
+    print(os.listdir(struct_path))
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
 
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
-    addition = Contour_Addition.ContourAddition(dcm_path, struct_path)
-    extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path)
+    addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, RAND_ID, RAND_UID)
+    extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
 
     jpeg_path = os.path.join(latest_subdir, 'JPEG_Dicoms')
     extraction_path = os.path.join(latest_subdir, 'Extraction')
     addition_path = os.path.join(latest_subdir, 'Addition')
 
-    convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path)
+    convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
+    dcm_path, DEBUG, RAND_ID, RAND_UID)
 
     # run the main function on each instance
     addition.process()
     extraction.process()
     convert_jpeg_to_dicom.process()
     
-    send_files_jpeg = Send_Files.SendFiles(jpeg_path)
+    send_files_jpeg = Send_Files.SendFiles(jpeg_path, dest_ip, dest_port, dest_aetitle)
     send_files_jpeg.send_dicom_folder()
     
-    send_files_overlay = Send_Files.SendFiles(addition_path)
+    send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
     print("Completing pipeline")
     return True
@@ -298,7 +326,7 @@ def main():
             if threads[t].is_alive() == False:
                 del threads[t]
 
-        print(list(threads))
+        print("Currently Processing {}".format(list(threads)), end="\r")
         
 
 

@@ -30,11 +30,14 @@ import re
 
 class SendFiles:
 
-    def __init__(self, dcm_path):
+    def __init__(self, dcm_path, dest_ip='152.11.105.191', dest_port=8104, dest_aetitle="RIIPLXNAT"):
+        self.dest_ip=dest_ip
+        self.dest_port=dest_port
+        self.dest_aetitle=dest_aetitle
         self.dcm_path = dcm_path
 
     def send_dicom_folder(self):
-        debug_logger()
+        #debug_logger()
 
         # Initialise the Application Entity
         ae = AE()
@@ -57,7 +60,10 @@ class SendFiles:
             # ds.file_meta.TransferSyntaxUID = ImplicitVRLittleEndian
 
             # Associate with peer AE at IP 127.0.0.1 and port 11112
-            assoc = ae.associate("152.11.105.191", 8104, ae_title='RIIPL-DICOM')
+            assoc = ae.associate(
+                self.dest_ip, 
+                self.dest_port,
+                ae_title=self.dest_aetitle)
 
             if assoc.is_established:
                 # Use the C-STORE service to send the dataset
