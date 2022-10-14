@@ -15,12 +15,9 @@ from pynetdicom import *
 import os
 from pydicom import dcmread
 from pynetdicom import AE, debug_logger
-from pynetdicom.sop_class import CTImageStorage, MRImageStorage
-from pydicom.uid import ExplicitVRLittleEndian
-from pydicom.uid import ImplicitVRLittleEndian, JPEGBaseline, ExplicitVRBigEndian
+from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage
 from pydicom.uid import (
-    ExplicitVRLittleEndian, ImplicitVRLittleEndian,
-    ExplicitVRBigEndian, DeflatedExplicitVRLittleEndian
+    ExplicitVRLittleEndian, ImplicitVRLittleEndian
 )
 import pydicom
 
@@ -44,6 +41,7 @@ class SendFiles:
 
         # Add a requested presentation context
         ae.add_requested_context(CTImageStorage, ImplicitVRLittleEndian)
+        ae.add_requested_context(SecondaryCaptureImageStorage, ExplicitVRLittleEndian)
 
         filepath = self.dcm_path
 
@@ -56,8 +54,6 @@ class SendFiles:
         for dicom in dicom_files:
 
             ds = dcmread(os.path.join(filepath, dicom))
-
-            # ds.file_meta.TransferSyntaxUID = ImplicitVRLittleEndian
 
             # Associate with peer AE at IP 127.0.0.1 and port 11112
             assoc = ae.associate(

@@ -2,6 +2,9 @@ import os
 import cv2
 import pydicom
 import re
+#import numpy as np
+import datetime
+import time
 
 class JPEGToDICOM_Class:
 
@@ -22,7 +25,7 @@ class JPEGToDICOM_Class:
         dcm_sorted.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
 
         counter = 0
-
+        list_of_images=[]
         for jpeg_file in jpeg_files:
 
             save_name = jpeg_file.replace('.jpeg', '')
@@ -32,52 +35,64 @@ class JPEGToDICOM_Class:
                save_name  = '0' * (5 - len(save_name)) + save_name 
 
             jpeg_file = os.path.join(self.extraction_path, jpeg_file)
-               
             reference_dicom = dcm_sorted[counter]
-            reference_dicom = os.path.join(self.dcm_path, reference_dicom)
-
-            ds = pydicom.dcmread(reference_dicom)
-            
-            ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
-            #ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.1.1'
-            ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.7.4'
-            ds.file_meta.MediaStorageSOPInstanceUID = "1.2.3"
-            ds.file_meta.ImplementationClassUID = "1.2.3.4"
-            
-            counter = counter + 1
-            
-            ds.SeriesNumber = ds.SeriesNumber + 75
-            ds.SeriesDescription = "Dicom RT Contours JPEG"
-            
+            counter+=1
+            reference_dicom = os.path.join(self.dcm_path, reference_dicom)            
             jpeg_file = cv2.imread(jpeg_file)
-            
-            ds.Rows, ds.Columns, dummy = jpeg_file.shape
+            jpeg_file = cv2.convertScaleAbs(jpeg_file)
+            #jpeg_bytes=jpeg_file.tobytes()
+            list_of_images.append(jpeg_bytes)
 
-            if jpeg_file.shape[1] == 3:
-                ds.SamplesPerPixel = 3
-            else:
-                ds.SamplesPerPixel = 1
+        # Create image from array of encapsulate bits
+        ds = pydicom.dcmread(reference_dicom)
 
-            ds.PhotometricInterpretation = 'YBR_FULL_422'
-            ds.BitsStored = 8
-            ds.BitsAllocated = 8
-            ds.HighBit = 7
-            ds.PixelData = jpeg_file.tobytes()
-            ds.PixelRepresentation = 0
-            ds.PlanarConfiguration = 0
-            ds.NumberOfFrames = 1
-            ds.is_little_endian = True
-            ds.is_implicit_VR = False
+        file_meta = pydicom.Dataset()
+        file_meta.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.7'
+        #file_meta.file_meta.MediaStorageSOPInstanceUID
+        #file_meta.ImplementationClassUID
 
-            if self.debug:
-                remove_these_tags = ['AccessionNumber']
-                for tag in remove_these_tags:
-                    if tag in ds:
-                        delattr(ds, tag)
+        new_ds = pydicom.FileDataset(f"{save_name}.dcm", file_meta=file_meta)
+        new_ds.Modality = 'OT'
+        new_ds.ContentDate = str(datetime.date.today()).replace('-','')
+        new_ds.ContentTime = str(time.time()) #milliseconds since the epoch
 
-                ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
-                ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
-                ds.StudyInstanceUID = self.RAND_UID
+        #new_ds.StudyInstanceUID
+        #new_ds.SeriesInstanceUID
+        #new_ds.SOPInstanceUID
+        new_ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.7'
+        new_ds.SecondaryCaptureDeviceManufctur = 'RIIPL NETRT'
 
-            print(" - Creating %s" % f"{save_name}.dcm")
-            ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)
+        #ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+        new_ds.SamplesPerPixel = 3
+        new_ds.SeriesNumber = ds.SeriesNumber + 75
+        new_ds.SeriesDescription = "Unapproved Treatment Plan JPEG"
+        new_ds.StudyDescription = "Unapproved Treatment Plan JPEG"
+        new_ds.BitsStored = 24
+        new_ds.BitsAllocated = 24
+        new_ds.HighBit = 23
+
+        new_ds.Rows, new_ds.Columns, dummy = jpeg_file.shape
+        
+        new_ds.PhotometricInterpretation = 'YBR_FULL_422'
+
+        # encapsulated dicom
+        new_ds.PixelData = pydicom.encaps.encapsulate(list_of_images)
+        #ds.PixelData = jpeg_file.tobytes()
+        new_ds.NumberOfFrames = len(list_of_images)
+        new_ds.PixelRepresentation = 0
+        new_ds.PlanarConfiguration = 0
+        new_ds.is_little_endian = True
+        new_ds.is_implicit_VR = False
+
+        if self.debug:
+            remove_these_tags = ['AccessionNumber']
+            for tag in remove_these_tags:
+                if tag in ds:
+                    delattr(ds, tag)
+
+            ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
+            ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
+            ds.StudyInstanceUID = self.RAND_UID
+
+        print(" - Creating %s" % f"{save_name}.dcm")
+        ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)

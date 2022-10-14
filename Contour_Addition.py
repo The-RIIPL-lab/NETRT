@@ -87,7 +87,8 @@ class ContourAddition:
                 # pack bytes
                 #print(" --- Adding new Overlay ROI: ", hex(hex_start))
                 packed_bytes = pack_bits(mask_slice)
-                ds.SeriesDescription = "CT with RadOnc overlay"
+                ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
+                ds.StudyDescription = "Unapproved Treatment Plan CT w Mask"
                 ds.SeriesNumber = ds.SeriesNumber + 100
 
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0040), 'CS', 'R')
@@ -110,8 +111,6 @@ class ContourAddition:
                     ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
                     ds.StudyInstanceUID = self.RAND_UID
                     
-
-
 
                 hex_start = hex_start + 2
 

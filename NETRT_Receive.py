@@ -46,7 +46,7 @@ parser.add_argument('-i', default="152.11.105.224")
 parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 
 # About the destination server
-parser.add_argument('-dp', type=int, default=9003)
+parser.add_argument('-dp', type=int, default=8104)
 parser.add_argument('-dip', default="152.11.105.191")
 parser.add_argument('-daet', help='AE title of this server', default='RIIPLXNAT')
 
@@ -165,14 +165,14 @@ def handler(a):
 
     if DEBUG:
         global RAND_ID
-        RAND_ID=''.join(random.choice(string.ascii_letters) for x in range(8))
+        letters='bcdfhjklmnopqrstvwxyz'
+        RAND_ID=''.join(random.choice(letters) for x in range(8))
         print("RANDOM ID is %s" % RAND_ID)
+        RAND_UID=generate_uid(entropy_srcs=[letters])
+        print(RAND_UID)
     else:
         RAND_ID=""
-
-    if DEBUG:
-        RAND_UID=generate_uid(entropy_srcs=[RAND_ID])
-        print(RAND_UID)
+        RAND_UID=""
 
     # get most recently created folder since it errors out sometimes otherwise
     #all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
@@ -185,21 +185,27 @@ def handler(a):
 
     # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
-    print("DEBUG")
-    print(os.listdir(struct_path))
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
 
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
-    addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, RAND_ID, RAND_UID)
+    if DEBUG:
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, RAND_ID, RAND_UID)
+    else:
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG)
+
     extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
 
     jpeg_path = os.path.join(latest_subdir, 'JPEG_Dicoms')
     extraction_path = os.path.join(latest_subdir, 'Extraction')
     addition_path = os.path.join(latest_subdir, 'Addition')
 
-    convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
-    dcm_path, DEBUG, RAND_ID, RAND_UID)
+    if DEBUG:
+        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
+        dcm_path, DEBUG, RAND_ID, RAND_UID)
+    else:
+        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
+        dcm_path)
 
     # run the main function on each instance
     addition.process()
