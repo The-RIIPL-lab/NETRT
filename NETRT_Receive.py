@@ -1,7 +1,7 @@
 from genericpath import isdir
 from logging.handlers import WatchedFileHandler
 from multiprocessing import cpu_count
-import os, sys
+import os, sys,binascii
 import argparse
 from unicodedata import name
 from pydicom.filewriter import write_file_meta_info
@@ -87,6 +87,11 @@ def handle_store(event):
     try:
         # Create a new accession folder
         extract_accession = f'Accession_{event.dataset.AccessionNumber}'
+
+        # Sometimes Accession numbers are empty
+        if len(extract_accession) < 11:
+            extract_accession = f'Accession_NOCODE'
+
         extract_accession = os.path.join('.', extract_accession)
         
         if os.path.isdir(extract_accession) == False:

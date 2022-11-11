@@ -74,18 +74,18 @@ class ContourAddition:
             if len(slice_str) < 5:
                slice_str  = '0' * (5 - len(slice_str)) + slice_str
                
-            #print("DEBUG: building layer for slice: ", slice_number)
+            print("DEBUG: building layer for slice: ", slice_number)
 
             hex_start = 0x6000
 
             for mask in mask_dict.keys():
-                #print(" --- Mask: ", mask)
+                print(" --- Mask: ", mask)
                 mask_array = mask_dict[mask]
                 mask_slice = mask_array[:, :, slice_number]
                 mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
 
                 # pack bytes
-                #print(" --- Adding new Overlay ROI: ", hex(hex_start))
+                print(" --- Adding new Overlay ROI: ", hex(hex_start))
                 packed_bytes = pack_bits(mask_slice)
                 ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
                 ds.StudyDescription = "Unapproved Treatment Plan CT w Mask"
@@ -101,7 +101,7 @@ class ContourAddition:
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
 
-                if self.debug:
+                if self.debug: # Debug Mode anonymizes everything crudely
                     remove_these_tags = ['AccessionNumber']
                     for tag in remove_these_tags:
                         if tag in ds:
@@ -110,10 +110,32 @@ class ContourAddition:
                     ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
                     ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
                     ds.StudyInstanceUID = self.RAND_UID
-                    
+
+                elif self.debug == False: # if you are not in debug mode
+
+                    # Check Image Comments for ID string (Depricated feature)
+                    if 'ImageComments' in ds: 
+                        if len(ds.ImageComments) > 0:
+                            sid = re.search(r'(?<=sid\:)[A-z0-9]+', ds.ImageComments )
+                            sid=sid.group(0)
+
+                            # Search for SID number
+                            if len(sid) > 0: 
+                                remove_these_tags = ['AccessionNumber']
+                                for tag in remove_these_tags:
+                                    if tag in ds:
+                                        delattr(ds, tag)
+
+                                ds.PatientID = sid
+                                ds.PatientName = sid
+                    else:
+                        # Remove Accession Number to cause PACS error
+                        remove_these_tags = ['AccessionNumber']
+                        for tag in remove_these_tags:
+                            if tag in ds:
+                                delattr(ds, tag)
 
                 hex_start = hex_start + 2
-
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
                 print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
                 ds.save_as(out_fn)
@@ -134,9 +156,10 @@ class ContourAddition:
             fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
             
             number = f.split('.')[-2]
+            if int(number) > 300:
+                number = fds.ImagePositionPatient[2]
             
             if hasattr(fds, 'SliceLocation'):
-
                 # Add the overlay layer
                 fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)

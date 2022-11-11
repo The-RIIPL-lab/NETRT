@@ -36,6 +36,9 @@ class ContourExtraction:
         if '*Skull' in structures:
             structures.remove('*Skull')
 
+        if "External" in structures:
+            structures.remove('External')
+
         # get a list of all structural files
         files = os.listdir(self.dcm_path)
         files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
@@ -74,18 +77,14 @@ class ContourExtraction:
         # increment make value to make NOT binary to rep colors in JPEG image.
         mask_dict = {}
         i = 1
-
         for struct in structures:
-
             try:
-
-                #print(struct)
+                print("Struct: {} mask will have value {}".format(struct, int(i)))
                 # load by name
                 mask_3d = RTstruct.get_roi_mask_by_name(struct)
                 # Assign mask value
                 mask_dict[struct] = np.where(mask_3d > 0, i, 0)
                 i += 100
-
             except Exception as err:
                 print(err)
 
@@ -102,7 +101,7 @@ class ContourExtraction:
             plt.axis('off')
 
             # Get a 2D slice of the anat_array
-            anat_slice = plt.imshow(anat_array[:, :, x], cmap=plt.cm.gray)
+            plt.imshow(anat_array[:, :, x], cmap=plt.cm.gray)
 
             # Get a corresponding 2D slice of each mask
             mask_image_dict = {}
@@ -117,12 +116,11 @@ class ContourExtraction:
                 if isnan(center_of_mask[0]):
                     continue
                 else:
-                    txt = plt.text(center_of_mask[1] + 10, center_of_mask[0], mask)
+                    txt = plt.text(center_of_mask[1] + 1, center_of_mask[0], mask)
                     txt.set_color("white")
 
                 mask_image_dict[mask] = plt.imshow(mask_slice, alpha=0.6,
-                                                   vmin=0,
-                                                   vmax=1000,
+                                                   #vmin=0,#vmax=1000,
                                                    cmap=plt.cm.prism)
 
             output_directory = self.dcm_path.replace('DCM', 'Extraction')
