@@ -290,6 +290,7 @@ def fileWatcherService(pd,currently_processing):
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
                 shutil.rmtree(abs_pd)
+                
                 currently_processing.remove(pd)
                 return True
             else:
