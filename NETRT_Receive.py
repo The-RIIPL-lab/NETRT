@@ -213,11 +213,11 @@ def handler(a):
 
     # run the main function on each instance
     print("START: Running Mask Addition Process")
-    addition.process()
+    #addition.process()
     print("END: Running Mask Addition Process")
 
     print("START: Running RT Extraction Process")
-    extraction.process()
+    #extraction.process()
     print("END: Running RT Extraction Process")
 
     print("START: Converting RT JPEGS to DICOM")
@@ -230,7 +230,7 @@ def handler(a):
     
     print("START: SENDING Mmask DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
-    send_files_overlay.send_dicom_folder()
+    #send_files_overlay.send_dicom_folder()
     print("END: Completing pipeline")
     return True
 

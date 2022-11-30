@@ -78,7 +78,8 @@ class JPEGToDICOM_Class:
 
         # Write Meta
         meta = pydicom.dataset.FileMetaDataset()
-        meta.TransferSyntaxUID = pydicom.uid.JPEGBaseline8Bit
+        meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+
         meta.MediaStorageSOPClassUID = pydicom.uid.MultiFrameTrueColorSecondaryCaptureImageStorage
         meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
 
@@ -112,8 +113,12 @@ class JPEGToDICOM_Class:
 
         new_ds.is_little_endian = True
         new_ds.is_implicit_VR = False
+
         new_ds.SOPClassUID = meta.MediaStorageSOPClassUID
         new_ds.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
+
+        print(new_ds.SOPClassUID)
+        print(new_ds.SOPInstanceUID)
 
         new_ds.SeriesInstanceUID = pydicom.uid.generate_uid()
         new_ds.StudyInstanceUID = pydicom.uid.generate_uid()

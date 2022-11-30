@@ -1,20 +1,9 @@
-#!/usr/bin/python
-"""
-Storage SCU example.
-
-This demonstrates a simple application entity that support the RT Plan
-Storage SOP Class as SCU. For this example to work, there must be an
-SCP listening on the specified host and port.
-
-For help on usage,
-python storescu.py -h
-"""
-
-from pynetdicom import AE, StoragePresentationContexts, build_role, debug_logger
+from pynetdicom import AE, debug_logger
+#StoragePresentationContexts, build_role, build_context, debug_logger
 from pynetdicom import *
 import os
 from pydicom import dcmread
-#from pynetdicom.sop_class import CTImageStorage, MultiFrameTrueColorSecondaryCaptureImageStorage
+from pynetdicom.sop_class import CTImageStorage, MultiFrameTrueColorSecondaryCaptureImageStorage
 
 class SendFiles:
 
@@ -25,19 +14,24 @@ class SendFiles:
         self.dcm_path = dcm_path
 
     def send_dicom_folder(self):
-        #debug_logger()
+
+        debug_logger()
 
         # Initialise the Application Entity
         ae = AE()
 
-        ae.requested_contexts = StoragePresentationContexts[86:90]
-        selected_contexts = [build_context('1.2.840.10008.5.1.4.1.1.7.4')]
+        # Add the CT image context for the 
+        ae.add_requested_context(CTImageStorage)
+        ExplicitVRLittleEndian = '1.2.840.10008.1.2.1'
+        ae.add_requested_context(MultiFrameTrueColorSecondaryCaptureImageStorage, ExplicitVRLittleEndian)
 
-        negotiation_items = []
-        for context in StoragePresentationContexts[86:90]:
-        #    print(context)
-            role = build_role(context.abstract_syntax, scp_role=True)
-            negotiation_items.append(role)
+        #ae.requested_contexts = StoragePresentationContexts[86:90]
+        #selected_contexts = [build_context('1.2.840.10008.5.1.4.1.1.7.4')]
+
+        # negotiation_items = []
+        # for context in StoragePresentationContexts[86:90]:
+        #     role = build_role(context.abstract_syntax, scp_role=True)
+        #     negotiation_items.append(role)
 
         filepath = self.dcm_path
         print('Path to the DICOM directory: {}'.format(filepath))
@@ -54,14 +48,15 @@ class SendFiles:
                 self.dest_ip, 
                 self.dest_port,
                 ae_title=self.dest_aetitle,
-                contexts=selected_contexts,
-                ext_neg=negotiation_items)
+                #contexts=selected_contexts,
+                #ext_neg=negotiation_items
+                )
 
             if assoc.is_established:
 
                 for cx in assoc.accepted_contexts:
-                    print(cx.status)
                     cx._as_scu = True
+                    #print(cx)
 
                 # Use the C-STORE service to send the dataset  
                 # returns the response status as a pydicom Dataset
