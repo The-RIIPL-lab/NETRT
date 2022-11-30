@@ -78,7 +78,7 @@ class JPEGToDICOM_Class:
 
         # Write Meta
         meta = pydicom.dataset.FileMetaDataset()
-        meta.TransferSyntaxUID = pydicom.uid.JPEGExtended12Bit
+        meta.TransferSyntaxUID = pydicom.uid.JPEGBaseline8Bit
         meta.MediaStorageSOPClassUID = pydicom.uid.MultiFrameTrueColorSecondaryCaptureImageStorage
         meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
 
@@ -104,7 +104,7 @@ class JPEGToDICOM_Class:
         new_ds.PixelRepresentation = 0
         new_ds.PlanarConfiguration = 0
 
-        new_ds.Modality = 'OT'
+        new_ds.Modality = 'SC'
         new_ds.ContentDate = str(datetime.date.today()).replace('-','')
         new_ds.ContentTime = str(time.time()) #milliseconds since the epoch
 
@@ -134,7 +134,7 @@ class JPEGToDICOM_Class:
         new_ds.SamplesPerPixel = 3
         new_ds.SeriesNumber = ds.SeriesNumber + 75
         new_ds.PhotometricInterpretation = 'YBR_FULL_422'
-        new_ds.ColorSpace = 'sRGB'
+        #new_ds.ColorSpace = 'sRGB'
 
         # Debug
         #print("Size is {}".format(new_ds.pixel_array.shape))
@@ -180,6 +180,6 @@ class JPEGToDICOM_Class:
                     if tag in ds:
                         delattr(ds, tag)
 
-        #print(" - Creating %s" % f"{save_name}.dcm")
-        #new_ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)
-        new_ds.save_as(f"{self.jpg_folder_path}/single_output_dicom.dcm", write_like_original=False)
+        print(" - Creating %s" % f"{save_name}.dcm")
+        new_ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)
+        #new_ds.save_as(f"{self.jpg_folder_path}/single_output_dicom.dcm", write_like_original=False)

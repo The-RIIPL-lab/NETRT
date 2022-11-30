@@ -33,28 +33,42 @@ class ContourAddition:
         # Provide a list of structures
         structures = RTstruct.get_roi_names()
 
+        # Remove known problematic ROIs
         if '*Skull' in structures:
             structures.remove()
 
-        print("These structures exist in RT:\n", structures)
+        # Evaluate ROIs
+        print("  - Evaluating Segmentations")
+        for struct in structures:
+            try:
+                dummy = RTstruct.get_roi_mask_by_name(struct)
+            except Exception:
+                print("WARNING: %s is an unreadable ROI." % struct)
+                structures.remove(struct)
+                continue
+            t=np.where(dummy > 0, 1, 0)
+            print(" >>> Structure: {} is sized at {}".format(
+                struct,
+                (dummy > 0 ).sum()
+            ))
+
+        print("  - These structures exist in RT:\n", structures)
 
         # Build Struct masks
         mask_dict = {}
 
         # overlay layer only supports binary mask. No different colors for each structure
-        i = 1
         for struct in structures:
+            #try:
+            # load by name
+            mask_3d = RTstruct.get_roi_mask_by_name(struct)
 
-            try:
+            # Assign mask value for each different mask
+            mask_dict[struct] = np.where(mask_3d > 0, 1, 0)
 
-                # load by name
-                mask_3d = RTstruct.get_roi_mask_by_name(struct)
-
-                # Assign mask value
-                mask_dict[struct] = np.where(mask_3d > 0, i, 0)
-
-            except Exception as err:
-                print(err)
+            #except Exception as err:
+            #    pass
+                #print(err)
 
         # get a list of all structural files
         files = os.listdir(self.dcm_path)
@@ -73,19 +87,22 @@ class ContourAddition:
             # add padding 0s dynamically
             if len(slice_str) < 5:
                slice_str  = '0' * (5 - len(slice_str)) + slice_str
-               
-            print("DEBUG: building layer for slice: ", slice_number)
+
+            if self.debug:
+                print("DEBUG: building layer for slice: ", slice_number)
 
             hex_start = 0x6000
 
             for mask in mask_dict.keys():
-                print(" --- Mask: ", mask)
+                if self.debug:
+                    print(" --- Mask: ", mask)
                 mask_array = mask_dict[mask]
                 mask_slice = mask_array[:, :, slice_number]
                 mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
 
                 # pack bytes
-                print(" --- Adding new Overlay ROI: ", hex(hex_start))
+                if self.debug:
+                    print(" --- Adding new Overlay ROI: ", hex(hex_start))
                 packed_bytes = pack_bits(mask_slice)
                 ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
                 ds.StudyDescription = "Unapproved Treatment Plan CT w Mask"
@@ -137,33 +154,36 @@ class ContourAddition:
 
                 hex_start = hex_start + 2
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
+
                 print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
                 ds.save_as(out_fn)
             return ds
 
         ## FROM PYDICOM EXAMPLE
         # Read the anatomical dicom file
-        print("file count: {}".format(len(files)))
-
         # skip files with no SliceLocation (eg scout views)
         slices = []
         skipcount = 0
         
         files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
+        print("file count: {}".format(len(files)))
 
         for f in files:
-            
+
             fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
             
             number = f.split('.')[-2]
             if int(number) > 300:
                 number = fds.ImagePositionPatient[2]
+                print(" >> File Number %i" % number)
             
             if hasattr(fds, 'SliceLocation'):
                 # Add the overlay layer
-                fds = add_overlay_layers(fds, mask_dict, number)
+                # fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)
             else:
                 skipcount = skipcount + 1
+
+            fds = add_overlay_layers(fds, mask_dict, number)
 
         print("skipped, no SliceLocation: {}".format(skipcount))

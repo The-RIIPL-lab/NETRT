@@ -1,7 +1,7 @@
 from genericpath import isdir
 from logging.handlers import WatchedFileHandler
 from multiprocessing import cpu_count
-import os, sys,binascii
+import os, sys, binascii
 import argparse
 from unicodedata import name
 from pydicom.filewriter import write_file_meta_info
@@ -32,8 +32,7 @@ import string
 #_config.STORE_RECV_CHUNKED_DATASET = True
 
 from pynetdicom import (
-    AE, debug_logger, evt, AllStoragePresentationContexts,
-    ALL_TRANSFER_SYNTAXES
+    AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
 )
 
 # parse commandline variables
@@ -213,16 +212,26 @@ def handler(a):
         dcm_path)
 
     # run the main function on each instance
+    print("START: Running Mask Addition Process")
     addition.process()
+    print("END: Running Mask Addition Process")
+
+    print("START: Running RT Extraction Process")
     extraction.process()
+    print("END: Running RT Extraction Process")
+
+    print("START: Converting RT JPEGS to DICOM")
     convert_jpeg_to_dicom.process()
+    print("END: Converting RT JPEGS to DICOM")
     
+    print("START: SENDING JPEG DICOMS")
     send_files_jpeg = Send_Files.SendFiles(jpeg_path, dest_ip, dest_port, dest_aetitle)
     send_files_jpeg.send_dicom_folder()
     
+    print("START: SENDING Mmask DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
-    print("Completing pipeline")
+    print("END: Completing pipeline")
     return True
 
 handlers = [
@@ -289,7 +298,8 @@ def fileWatcherService(pd,currently_processing):
                 os.path.dirname(pd))
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
-                shutil.rmtree(abs_pd)
+                #shutil.rmtree(abs_pd)
+                sys.exit(0)
                 
                 currently_processing.remove(pd)
                 return True
@@ -340,8 +350,6 @@ def main():
 
         print("Currently Processing {}".format(list(threads)), end="\r")
         
-
-
         # if length of received files is greater than 0, execute this block
         # if len(sequence_nums) > 0:
         #     count += 1

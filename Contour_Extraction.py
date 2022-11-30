@@ -33,11 +33,24 @@ class ContourExtraction:
         # get a list of structures
         structures = RTstruct.get_roi_names()
         
+        # Remove known problematic ROIs
         if '*Skull' in structures:
             structures.remove('*Skull')
 
-        if "External" in structures:
-            structures.remove('External')
+        # Evaluate ROIs
+        print("Evaluating Segmentations")
+        for struct in structures:
+            try:
+                dummy = RTstruct.get_roi_mask_by_name(struct)
+            except Exception:
+                print("WARNING: %s is an unreadable ROI." % struct)
+                structures.remove(struct)
+                continue
+            t=np.where(dummy > 0, 1, 0)
+            print(" >>> Structure: {} is sized at {}".format(
+                struct,
+                (dummy > 0 ).sum()
+            ))
 
         # get a list of all structural files
         files = os.listdir(self.dcm_path)
@@ -76,17 +89,23 @@ class ContourExtraction:
         # Build Struct masks
         # increment make value to make NOT binary to rep colors in JPEG image.
         mask_dict = {}
-        i = 1
+        i=100
         for struct in structures:
             try:
-                print("Struct: {} mask will have value {}".format(struct, int(i)))
                 # load by name
                 mask_3d = RTstruct.get_roi_mask_by_name(struct)
-                # Assign mask value
-                mask_dict[struct] = np.where(mask_3d > 0, i, 0)
-                i += 100
+
+            except KeyError:
+                print("ERROR: unable to locate mask: %s" % struct)
+                continue
+
             except Exception as err:
-                print(err)
+                print("OTHER ERROR: {}".format(err))
+                break
+
+            # Assign mask value
+            mask_dict[struct]= np.where(mask_3d > 0, i, 0)
+            i+=100
 
         for x in range(0, anat_array.shape[2]):
             
@@ -106,29 +125,28 @@ class ContourExtraction:
             # Get a corresponding 2D slice of each mask
             mask_image_dict = {}
             
+            # For reference, now the "structs" from before are "masks"
             for mask in mask_dict.keys():
                 mask_array = mask_dict[mask]
                 mask_slice = mask_array[:, :, x]
-                mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
-
+                mask_slice = np.ma.masked_where(mask_slice==0, mask_slice)
+                
                 center_of_mask = center_of_mass(np.where(mask_slice > 0, 1, 0))
-
                 if isnan(center_of_mask[0]):
                     continue
                 else:
-                    txt = plt.text(center_of_mask[1] + 1, center_of_mask[0], mask)
+                    txt = plt.text(center_of_mask[1], center_of_mask[0], mask)
                     txt.set_color("white")
 
-                mask_image_dict[mask] = plt.imshow(mask_slice, alpha=0.6,
-                                                   #vmin=0,#vmax=1000,
-                                                   cmap=plt.cm.prism)
+                mask_image_dict[mask] = plt.imshow(mask_slice, alpha=0.6, cmap=plt.cm.prism)
 
             output_directory = self.dcm_path.replace('DCM', 'Extraction')
 
             if os.path.isdir(output_directory) == False:
                 os.mkdir(output_directory)
-
+            
             print(" - Creating JPEG image %s" % f"{str(slice_str)}.jpeg")
+
             try:
                 plt.savefig(f'{output_directory}/{str(slice_str)}.jpeg', bbox_inches='tight', pad_inches=0)
             except:

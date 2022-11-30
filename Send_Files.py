@@ -10,20 +10,11 @@ For help on usage,
 python storescu.py -h
 """
 
-from pynetdicom import AE, StoragePresentationContexts
+from pynetdicom import AE, StoragePresentationContexts, build_role, debug_logger
 from pynetdicom import *
 import os
 from pydicom import dcmread
-from pynetdicom import AE, debug_logger
-from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage
-from pydicom.uid import (
-    ExplicitVRLittleEndian, ImplicitVRLittleEndian
-)
-import pydicom
-
-from pydicom.filereader import read_dicomdir
-from pydicom.data import get_testdata_files
-import re
+#from pynetdicom.sop_class import CTImageStorage, MultiFrameTrueColorSecondaryCaptureImageStorage
 
 class SendFiles:
 
@@ -39,17 +30,20 @@ class SendFiles:
         # Initialise the Application Entity
         ae = AE()
 
-        # Add a requested presentation context
-        ae.add_requested_context(CTImageStorage, ImplicitVRLittleEndian)
-        ae.add_requested_context(SecondaryCaptureImageStorage, ExplicitVRLittleEndian)
+        ae.requested_contexts = StoragePresentationContexts[86:90]
+        selected_contexts = [build_context('1.2.840.10008.5.1.4.1.1.7.4')]
+
+        negotiation_items = []
+        for context in StoragePresentationContexts[86:90]:
+        #    print(context)
+            role = build_role(context.abstract_syntax, scp_role=True)
+            negotiation_items.append(role)
 
         filepath = self.dcm_path
-
         print('Path to the DICOM directory: {}'.format(filepath))
+        
         # load the data
-
         dicom_files = os.listdir(filepath)
-        dicom_files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
 
         for dicom in dicom_files:
 
@@ -59,10 +53,17 @@ class SendFiles:
             assoc = ae.associate(
                 self.dest_ip, 
                 self.dest_port,
-                ae_title=self.dest_aetitle)
+                ae_title=self.dest_aetitle,
+                contexts=selected_contexts,
+                ext_neg=negotiation_items)
 
             if assoc.is_established:
-                # Use the C-STORE service to send the dataset
+
+                for cx in assoc.accepted_contexts:
+                    print(cx.status)
+                    cx._as_scu = True
+
+                # Use the C-STORE service to send the dataset  
                 # returns the response status as a pydicom Dataset
                 status = assoc.send_c_store(ds)
 
