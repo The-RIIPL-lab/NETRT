@@ -3,7 +3,7 @@ from pynetdicom import AE, debug_logger
 from pynetdicom import *
 import os
 from pydicom import dcmread
-from pynetdicom.sop_class import CTImageStorage, MultiFrameTrueColorSecondaryCaptureImageStorage
+from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage
 
 class SendFiles:
 
@@ -15,23 +15,16 @@ class SendFiles:
 
     def send_dicom_folder(self):
 
-        debug_logger()
+        #debug_logger()
 
         # Initialise the Application Entity
         ae = AE()
 
         # Add the CT image context for the 
-        ae.add_requested_context(CTImageStorage)
         ExplicitVRLittleEndian = '1.2.840.10008.1.2.1'
-        ae.add_requested_context(MultiFrameTrueColorSecondaryCaptureImageStorage, ExplicitVRLittleEndian)
-
-        #ae.requested_contexts = StoragePresentationContexts[86:90]
-        #selected_contexts = [build_context('1.2.840.10008.5.1.4.1.1.7.4')]
-
-        # negotiation_items = []
-        # for context in StoragePresentationContexts[86:90]:
-        #     role = build_role(context.abstract_syntax, scp_role=True)
-        #     negotiation_items.append(role)
+        JPEGExtended='1.2.840.10008.1.2.4.51'
+        ae.add_requested_context(CTImageStorage, ExplicitVRLittleEndian)
+        ae.add_requested_context(SecondaryCaptureImageStorage, JPEGExtended)
 
         filepath = self.dcm_path
         print('Path to the DICOM directory: {}'.format(filepath))

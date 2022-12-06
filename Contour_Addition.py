@@ -8,19 +8,21 @@ from pydicom.pixel_data_handlers.numpy_handler import pack_bits
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 from scipy.ndimage.measurements import center_of_mass
 from math import isnan
-#from skimage.measure import find_contours
+import datetime
 import re
 
 plt.switch_backend('agg')
 
 class ContourAddition:
 
-    def __init__(self, dcm_path, struct_path, debug=False, RAND_ID='', RAND_UID=''):
+    def __init__(self, dcm_path, struct_path, debug=False, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
         self.debug  = debug
         self.RAND_ID = RAND_ID
-        self.RAND_UID = RAND_UID
+        self.SOPInstanceUID=CT_SOPInstanceUID
+        self.StudyInstanceUID=STUDY_INSTANCE_ID
+        self.FrameOfReferenceUID=FOD_REF_ID
 
     def process(self):
 
@@ -79,7 +81,7 @@ class ContourAddition:
         if os.path.isdir(output_directory) == False:
             os.mkdir(output_directory)
 
-        def add_overlay_layers(ds, mask_dict, match):
+        def add_overlay_layers(ds, SeriesInstanceUID, mask_dict, match):
             slice_number = int(match) - 1
             
             slice_str = str(slice_number)
@@ -93,6 +95,8 @@ class ContourAddition:
 
             hex_start = 0x6000
 
+            MediaSOPClassUID = '1.2.840.10008.5.1.4.1.1.2' # defined for the whole scan series
+
             for mask in mask_dict.keys():
                 if self.debug:
                     print(" --- Mask: ", mask)
@@ -103,10 +107,36 @@ class ContourAddition:
                 # pack bytes
                 if self.debug:
                     print(" --- Adding new Overlay ROI: ", hex(hex_start))
+
                 packed_bytes = pack_bits(mask_slice)
-                ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
+
+                # These classes are consistent
+                ds.file_meta.MediaSOPClassUID = MediaSOPClassUID
+                ds.SOPClassUID = MediaSOPClassUID
+
+                # There change image to image
+                ds.file_meta.MediaSOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
+                ds.SOPInstanceUID = ds.file_meta.MediaSOPInstanceUID 
+                
                 ds.StudyDescription = "Unapproved Treatment Plan CT w Mask"
-                ds.SeriesNumber = ds.SeriesNumber + 100
+                ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
+
+                # Consistent within all study/session/scans
+                ds.StudyInstanceUID = self.StudyInstanceUID
+
+                # Different for each scan in the series, but same image to image
+                ds.SeriesInstanceUID = SeriesInstanceUID
+
+                ds.SeriesNumber = 2
+                
+                # Consistent within all study/session/scans
+                ds.FrameOfReferenceUID = self.FrameOfReferenceUID
+
+                ds.Modality = 'CT'
+                ds.ContentDate = str(datetime.date.today()).replace('-','')
+                ds.AcquisitionDate = str(datetime.date.today()).replace('-','')
+                ds.SeriesDate = str(datetime.date.today()).replace('-','')
+                ds.StudyDate = str(datetime.date.today()).replace('-','')
 
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0040), 'CS', 'R')
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0050), 'SS', [1, 1])
@@ -118,15 +148,42 @@ class ContourAddition:
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
                 ds.add_new(pydicom.tag.Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
 
+                ds.StudyID = "RTPlanShare"
+
+                dt = datetime.time(0, 1, 1, 10)
+                ds.StudyTime = dt.strftime('%H%M%S.%f')
+
+                dt = datetime.time(0, 1, 3, 30)
+                ds.SeriesTime = dt.strftime('%H%M%S.%f')
+
+                dt = datetime.time(0, 1, 7, 30)
+                ds.ContentTime = dt.strftime('%H%M%S.%f')
+
+                dt = datetime.time(0, 1, 9, 30)
+                ds.AcquisitionTime = dt.strftime('%H%M%S.%f')
+
+                if (0x0040, 0x0275) in ds:
+                    del ds[0x0040, 0x0275]
+                if (0x0010, 0x1000) in ds:
+                    del ds[0x0010, 0x1000] # delete retired IDs
+
+                if (0x0008, 0x0012) in ds:
+                    del ds[0x0008, 0x0012] # delete instance creation dates
+                    del ds[0x0008, 0x0013] # delete Instance cretaion times
+                
+                ds.PatientAge = '0'
+
+                ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
+                ds.PatientSex= 'O'# delete Gender
+
                 if self.debug: # Debug Mode anonymizes everything crudely
                     remove_these_tags = ['AccessionNumber']
                     for tag in remove_these_tags:
                         if tag in ds:
                             delattr(ds, tag)
 
-                    ds.PatientID = str("RT_TEST-" + self.RAND_ID).upper()
-                    ds.PatientName = str("RT_TEST-" + self.RAND_ID).upper()
-                    ds.StudyInstanceUID = self.RAND_UID
+                    ds.PatientID = str("RT_" + self.RAND_ID).upper()
+                    ds.PatientName = str("RT_" + self.RAND_ID).upper()
 
                 elif self.debug == False: # if you are not in debug mode
 
@@ -168,6 +225,8 @@ class ContourAddition:
         files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
         print("file count: {}".format(len(files)))
 
+        SeriesInstanceUID = pydicom.uid.generate_uid() # defined for the whole scan series
+
         for f in files:
 
             fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
@@ -184,6 +243,6 @@ class ContourAddition:
             else:
                 skipcount = skipcount + 1
 
-            fds = add_overlay_layers(fds, mask_dict, number)
+            fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, number)
 
         print("skipped, no SliceLocation: {}".format(skipcount))

@@ -1,7 +1,7 @@
 from genericpath import isdir
-from logging.handlers import WatchedFileHandler
+#from logging.handlers import WatchedFileHandler
 from multiprocessing import cpu_count
-import os, sys, binascii
+import os, sys
 import argparse
 from unicodedata import name
 from pydicom.filewriter import write_file_meta_info
@@ -9,23 +9,23 @@ from pydicom import dcmread
 from pydicom.uid import generate_uid
 import numpy as np
 # from rt_utils import RTStructBuilder
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from pynetdicom.sop_class import Verification
-from pynetdicom import _config
+#from pynetdicom import _config
 import signal
 import time
-import re
+#import re
 import Contour_Addition
 import Contour_Extraction
 import Send_Files
 import JPEGToDicom
-import PIL.Image
+#import PIL.Image
 import numpy as np
 import pydicom
-import shutil
+#import shutil
 import threading
 import random
-import string
+#import string
 
 
 # Dump raw data into file
@@ -167,20 +167,29 @@ def handler(a):
     # Announce the pipeline
     print("Starting pipeline")
 
+    # Storage Type: Secondary Capture Image Storage
+    # This should be consistent for all SCAN SERIES in the SESSION
+    STUDY_INSTANCE_ID = pydicom.uid.generate_uid()
+    FOD_REF_ID= pydicom.uid.generate_uid()
+
+    # This should be the MEDIA Storage SOP (instance, not class). 
+    # Consistent consistent within the file but different between scan series
+    SC_SOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.7.')
+
+    # Storage Type: CT Image Storage
+    CT_SOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
+
     if DEBUG:
         global RAND_ID
         letters='bcdfhjklmnopqrstvwxyz'
         RAND_ID=''.join(random.choice(letters) for x in range(8))
         print("RANDOM ID is %s" % RAND_ID)
-        RAND_UID=generate_uid(entropy_srcs=[letters])
-        print(RAND_UID)
     else:
         RAND_ID=""
-        RAND_UID=""
 
     # get most recently created folder since it errors out sometimes otherwise
-    #all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
-    #latest_subdir = max(all_subdirs, key=os.path.getmtime)
+    # all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
+    # latest_subdir = max(all_subdirs, key=os.path.getmtime)
 
     latest_subdir=a
 
@@ -194,9 +203,9 @@ def handler(a):
 
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
     if DEBUG:
-        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, RAND_ID, RAND_UID)
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
     else:
-        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG)
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
 
     extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
 
@@ -205,19 +214,17 @@ def handler(a):
     addition_path = os.path.join(latest_subdir, 'Addition')
 
     if DEBUG:
-        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
-        dcm_path, DEBUG, RAND_ID, RAND_UID)
+        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID, RAND_ID)
     else:
-        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path,
-        dcm_path)
+        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID)
 
     # run the main function on each instance
     print("START: Running Mask Addition Process")
-    #addition.process()
+    addition.process()
     print("END: Running Mask Addition Process")
 
     print("START: Running RT Extraction Process")
-    #extraction.process()
+    extraction.process()
     print("END: Running RT Extraction Process")
 
     print("START: Converting RT JPEGS to DICOM")
@@ -230,7 +237,7 @@ def handler(a):
     
     print("START: SENDING Mmask DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
-    #send_files_overlay.send_dicom_folder()
+    send_files_overlay.send_dicom_folder()
     print("END: Completing pipeline")
     return True
 
