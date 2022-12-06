@@ -207,33 +207,33 @@ def handler(a):
     else:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
 
-    extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
+    #extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
 
-    jpeg_path = os.path.join(latest_subdir, 'JPEG_Dicoms')
-    extraction_path = os.path.join(latest_subdir, 'Extraction')
+    #jpeg_path = os.path.join(latest_subdir, 'JPEG_Dicoms')
+    #extraction_path = os.path.join(latest_subdir, 'Extraction')
     addition_path = os.path.join(latest_subdir, 'Addition')
 
-    if DEBUG:
-        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID, RAND_ID)
-    else:
-        convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID)
+    # if DEBUG:
+    #     convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID, RAND_ID)
+    # else:
+    #     convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID)
 
     # run the main function on each instance
     print("START: Running Mask Addition Process")
     addition.process()
     print("END: Running Mask Addition Process")
 
-    print("START: Running RT Extraction Process")
-    extraction.process()
-    print("END: Running RT Extraction Process")
+    # print("START: Running RT Extraction Process")
+    # extraction.process()
+    # print("END: Running RT Extraction Process")
 
-    print("START: Converting RT JPEGS to DICOM")
-    convert_jpeg_to_dicom.process()
-    print("END: Converting RT JPEGS to DICOM")
+    # print("START: Converting RT JPEGS to DICOM")
+    # convert_jpeg_to_dicom.process()
+    # print("END: Converting RT JPEGS to DICOM")
     
-    print("START: SENDING JPEG DICOMS")
-    send_files_jpeg = Send_Files.SendFiles(jpeg_path, dest_ip, dest_port, dest_aetitle)
-    send_files_jpeg.send_dicom_folder()
+    # print("START: SENDING JPEG DICOMS")
+    # send_files_jpeg = Send_Files.SendFiles(jpeg_path, dest_ip, dest_port, dest_aetitle)
+    # send_files_jpeg.send_dicom_folder()
     
     print("START: SENDING Mmask DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)

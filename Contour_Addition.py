@@ -61,16 +61,20 @@ class ContourAddition:
 
         # overlay layer only supports binary mask. No different colors for each structure
         for struct in structures:
-            #try:
-            # load by name
-            mask_3d = RTstruct.get_roi_mask_by_name(struct)
+            try:
+                # load by name
+                mask_3d = RTstruct.get_roi_mask_by_name(struct)
+
+            except KeyError:
+                print("ERROR: unable to locate mask: %s" % struct)
+                continue
+
+            except Exception as err:
+                print("OTHER ERROR: {}".format(err))
+                continue
 
             # Assign mask value for each different mask
             mask_dict[struct] = np.where(mask_3d > 0, 1, 0)
-
-            #except Exception as err:
-            #    pass
-                #print(err)
 
         # get a list of all structural files
         files = os.listdir(self.dcm_path)

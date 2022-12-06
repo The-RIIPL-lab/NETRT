@@ -47,7 +47,7 @@ class ContourExtraction:
                 structures.remove(struct)
                 continue
             t=np.where(dummy > 0, 1, 0)
-            print(" >>> Structure: {} is sized at {}".format(
+            print(" >>> Structure: {} is sized at {}\n".format(
                 struct,
                 (dummy > 0 ).sum()
             ))
@@ -90,6 +90,23 @@ class ContourExtraction:
         # increment make value to make NOT binary to rep colors in JPEG image.
         mask_dict = {}
         i=100
+        print("  - Evaluating Segmentations")
+
+        for struct in structures:
+            try:
+                dummy = RTstruct.get_roi_mask_by_name(struct)
+            except Exception:
+                print("WARNING: %s is an unreadable ROI." % struct)
+                structures.remove(struct)
+                continue
+            t=np.where(dummy > 0, 1, 0)
+            print(" >>> Structure: {} is sized at {}".format(
+                struct,
+                (dummy > 0 ).sum()
+            ))
+            
+        print("  - These structures exist in RT:\n", structures)
+
         for struct in structures:
             try:
                 # load by name
