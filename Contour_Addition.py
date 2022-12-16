@@ -76,6 +76,9 @@ class ContourAddition:
             # Assign mask value for each different mask
             mask_dict[struct] = np.where(mask_3d > 0, 1, 0)
 
+            # flip the mask
+            mask_dict[struct] = np.flip(mask_dict[struct], axis=2)
+
         # get a list of all structural files
         files = os.listdir(self.dcm_path)
 
@@ -244,9 +247,8 @@ class ContourAddition:
                 # Add the overlay layer
                 # fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)
+                fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, number)
             else:
                 skipcount = skipcount + 1
-
-            fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, number)
 
         print("skipped, no SliceLocation: {}".format(skipcount))
