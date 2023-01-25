@@ -1,35 +1,18 @@
-from genericpath import isdir
-#from logging.handlers import WatchedFileHandler
-from multiprocessing import cpu_count
 import os, sys
 import argparse
-from unicodedata import name
+import signal
+import time
+import Contour_Addition
+import Send_Files
+import threading
+import random
+import shutil
+
+import pydicom
 from pydicom.filewriter import write_file_meta_info
 from pydicom import dcmread
 from pydicom.uid import generate_uid
-import numpy as np
-# from rt_utils import RTStructBuilder
-#import matplotlib.pyplot as plt
 from pynetdicom.sop_class import Verification
-#from pynetdicom import _config
-import signal
-import time
-#import re
-import Contour_Addition
-import Contour_Extraction
-import Send_Files
-import JPEGToDicom
-#import PIL.Image
-import numpy as np
-import pydicom
-#import shutil
-import threading
-import random
-#import string
-
-
-# Dump raw data into file
-#_config.STORE_RECV_CHUNKED_DATASET = True
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
@@ -41,7 +24,7 @@ message="""RIIPL Labs 2022 - Inline DicomRT contour and dose report generator"""
 # About this server
 parser = argparse.ArgumentParser(description=message)
 parser.add_argument('-p', type=int, default=11112)
-parser.add_argument('-i', default="152.11.105.224")
+parser.add_argument('-i', default="127.0.0.1")
 parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 
 # About the destination server
@@ -207,35 +190,14 @@ def handler(a):
     else:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
 
-    #extraction = Contour_Extraction.ContourExtraction(dcm_path, struct_path) 
-
-    #jpeg_path = os.path.join(latest_subdir, 'JPEG_Dicoms')
-    #extraction_path = os.path.join(latest_subdir, 'Extraction')
     addition_path = os.path.join(latest_subdir, 'Addition')
-
-    # if DEBUG:
-    #     convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID, RAND_ID)
-    # else:
-    #     convert_jpeg_to_dicom = JPEGToDicom.JPEGToDICOM_Class(jpeg_path, extraction_path, dcm_path, DEBUG, STUDY_INSTANCE_ID, SC_SOPInstanceUID, FOD_REF_ID)
 
     # run the main function on each instance
     print("START: Running Mask Addition Process")
     addition.process()
     print("END: Running Mask Addition Process")
-
-    # print("START: Running RT Extraction Process")
-    # extraction.process()
-    # print("END: Running RT Extraction Process")
-
-    # print("START: Converting RT JPEGS to DICOM")
-    # convert_jpeg_to_dicom.process()
-    # print("END: Converting RT JPEGS to DICOM")
     
-    # print("START: SENDING JPEG DICOMS")
-    # send_files_jpeg = Send_Files.SendFiles(jpeg_path, dest_ip, dest_port, dest_aetitle)
-    # send_files_jpeg.send_dicom_folder()
-    
-    print("START: SENDING Mmask DICOMS")
+    print("START: SENDING Masked DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
     print("END: Completing pipeline")
@@ -305,7 +267,7 @@ def fileWatcherService(pd,currently_processing):
                 os.path.dirname(pd))
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
-                #shutil.rmtree(abs_pd)
+                shutil.rmtree(abs_pd)
                 sys.exit(0)
                 
                 currently_processing.remove(pd)
@@ -356,14 +318,6 @@ def main():
                 del threads[t]
 
         print("Currently Processing {}".format(list(threads)), end="\r")
-        
-        # if length of received files is greater than 0, execute this block
-        # if len(sequence_nums) > 0:
-        #     count += 1
-        #     # if length of received files is less than count, execute this block
-        #     if count > len(sequence_nums):
-        #         print("Executing Handler")
-        #         #handler('a', 'b')
 
 print("\n",message)
 print(""" - OPEN TO RECIEVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
