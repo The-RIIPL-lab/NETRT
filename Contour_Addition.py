@@ -78,7 +78,7 @@ class ContourAddition:
 
             # flip the mask
             mask_dict[struct] = np.flip(mask_dict[struct], axis=2)
-
+            
         # get a list of all structural files
         files = os.listdir(self.dcm_path)
 
@@ -90,7 +90,6 @@ class ContourAddition:
 
         def add_overlay_layers(ds, SeriesInstanceUID, mask_dict, match):
             slice_number = int(match) - 1
-            
             slice_str = str(slice_number)
             
             # add padding 0s dynamically
@@ -114,7 +113,7 @@ class ContourAddition:
                 # pack bytes
                 if self.debug:
                     print(" --- Adding new Overlay ROI: ", hex(hex_start))
-
+                    
                 packed_bytes = pack_bits(mask_slice)
 
                 # These classes are consistent
@@ -233,21 +232,34 @@ class ContourAddition:
         print("file count: {}".format(len(files)))
 
         SeriesInstanceUID = pydicom.uid.generate_uid() # defined for the whole scan series
+        
+        headers = []
+        
+        for f in files:
+            ds = pydicom.read_file(os.path.join(self.dcm_path, f))
+            headers.append((ds[0x0020, 0x0013].value, f))
+    
+            # sort by header information (image number) and return a list of filenames sorted accordingly 
+            files = [f for _, f in sorted(headers)]
+            
+        counter = 0
 
         for f in files:
+        
+            counter = counter + 1
 
             fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
-            
             number = f.split('.')[-2]
+            
             if int(number) > 300:
-                number = fds.ImagePositionPatient[2]
-                print(" >> File Number %i" % number)
+              number = fds.ImagePositionPatient[2]
+              print(" >> File Number %i" % number)
             
             if hasattr(fds, 'SliceLocation'):
                 # Add the overlay layer
                 # fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)
-                fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, number)
+                fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, counter)
             else:
                 skipcount = skipcount + 1
 
