@@ -10,6 +10,7 @@ from scipy.ndimage.measurements import center_of_mass
 from math import isnan
 import datetime
 import re
+from Reorient_Dicoms import *
 
 plt.switch_backend('agg')
 
@@ -264,3 +265,10 @@ class ContourAddition:
                 skipcount = skipcount + 1
 
         print("skipped, no SliceLocation: {}".format(skipcount))
+        
+        # Create Overlay layer function
+        output_directory = os.path.abspath(self.dcm_path).replace('DCM', 'Addition')
+        
+        reorient = Reorient_Dicoms(output_directory)
+        reorient.reorient_driver()
+        
