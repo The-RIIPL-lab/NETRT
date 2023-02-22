@@ -37,6 +37,9 @@ class Reorient_Dicoms:
         x_spacing = tbs.PixelSpacing[0]
         y_spacing = tbs.PixelSpacing[1]
         SeriesInstanceUID = tbs.SeriesInstanceUID
+        prefix=SeriesInstanceUID.split('.')
+        prefix=".".join(prefix[:7])
+
         try:
             SeriesDescription = tbs.SeriesDescription
         except:
@@ -57,18 +60,17 @@ class Reorient_Dicoms:
             tbs.SeriesDescription = SeriesDescription + ' coronal view'
         
             # to distinguish with the original series, modify the series id
-            tbs.SeriesInstanceUID = SeriesInstanceUID + '.1'
+
+            #tbs.SeriesInstanceUID = SeriesInstanceUID + '.1'
+            tbs.SeriesInstanceUID = prefix + ".1000"
+
             # copy the data back to the original data set
             tbs.PixelData = data_downsampling.tobytes()
             # update the information regarding the shape of the data array
             tbs.Rows, tbs.Columns = data_downsampling.shape
             #  the new series will be saved in the same directory as the original dicom with different suffix.
             
-            save_name = imgs[0].replace('.dcm', f'.x-{x}.dcm')
-            
-            new_series_uid1 = generate_uid(prefix=None)
-            tbs.SeriesInstanceUID = '1.' + new_series_uid1
-            
+            save_name = imgs[0].replace('.dcm', f'.x-{x}.dcm')   
             tbs.save_as(save_name)
         
         for y in range(img_3d.shape[2]):
@@ -85,15 +87,14 @@ class Reorient_Dicoms:
             tbs.SeriesDescription = SeriesDescription + ' sagittal view'
         
             # to distinguish with the original series, modify the series id
-            tbs.SeriesInstanceUID = SeriesInstanceUID + '.2'
+
+            #tbs.SeriesInstanceUID = SeriesInstanceUID + '.2'
+            tbs.SeriesInstanceUID = prefix + ".2000"
+
             # copy the data back to the original data set
             tbs.PixelData = data_downsampling.tobytes()
             # update the information regarding the shape of the data array
             tbs.Rows, tbs.Columns = data_downsampling.shape
             #  the new series will be saved in the same directory as the original dicom with different suffix.
             save_name = imgs[0].replace('.dcm', f'.y-{y}.dcm')
-            
-            new_series_uid2 = generate_uid(prefix=None)
-            tbs.SeriesInstanceUID = '2.' + new_series_uid2
-            
             tbs.save_as(save_name)
