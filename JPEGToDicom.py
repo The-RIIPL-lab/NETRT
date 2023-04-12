@@ -129,8 +129,12 @@ class JPEGToDICOM_Class:
             output.close()
             new_ds['PixelData'].is_undefined_length = True 
 
-            new_ds.file_meta.MediaSOPClassUID = MediaSOPClassUID
-            new_ds.SOPClassUID = MediaSOPClassUID
+            # new_ds.file_meta.MediaSOPClassUID = MediaSOPClassUID
+            # new_ds.SOPClassUID = MediaSOPClassUID
+            
+            media_sop_instance_uid = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.7.')
+            new_ds.file_meta.MediaSOPInstanceUID = media_sop_instance_uid
+            new_ds.SOPInstanceUID = media_sop_instance_uid
 
             new_ds.file_meta.MediaSOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.7.')
             new_ds.SOPInstanceUID = ds.file_meta.MediaSOPInstanceUID 
