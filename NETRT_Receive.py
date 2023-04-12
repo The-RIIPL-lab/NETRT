@@ -7,7 +7,6 @@ import Send_Files
 import threading
 import random
 import shutil
-
 import pydicom
 from pydicom.filewriter import write_file_meta_info
 from pydicom import dcmread
@@ -68,11 +67,13 @@ def handle_store(event):
 
     try:
         # Create a new accession folder
-        extract_accession = f'Accession_{event.dataset.AccessionNumber}'
+        #extract_accession = f'Accession_{event.dataset.AccessionNumber}'
+        extract_accession = f'UID_{event.dataset.StudyInstanceUID}'
 
         # Sometimes Accession numbers are empty
-        if len(extract_accession) < 11:
-            extract_accession = f'Accession_NOCODE'
+        # if len(extract_accession) < 11:
+        #     extract_accession = f'Accession_NOCODE'
+        #     extract_accession = f'UID_{event.dataset.StudyInstanceUID}'
 
         extract_accession = os.path.join('.', extract_accession)
         
@@ -181,6 +182,8 @@ def handler(a):
 
     # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
+
+    # Potential Error point: Missing Structure file
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
 
@@ -224,7 +227,7 @@ def int_handler(signum, frame):
 
 # return a list of directories that match the Accession Pattern
 def find_accession_directories(my_dir:str):
-    Accession_directories = [os.path.join(d,'DCM') for d in os.listdir(my_dir) if d.startswith('Accession')]
+    Accession_directories = [os.path.join(d,'DCM') for d in os.listdir(my_dir) if d.startswith('UID_')]
     return(Accession_directories)
 
 def fileInDirectory(my_dir: str):
@@ -320,7 +323,7 @@ def main():
         print("Currently Processing {}".format(list(threads)), end="\r")
 
 print("\n",message)
-print(""" - OPEN TO RECIEVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
+print(""" - OPEN TO RECEIVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
 print(""" - FORWARDING TO > {} IP: {}:{}""".format(dest_aetitle, dest_ip, dest_port))
 
 # Let's run the main function 

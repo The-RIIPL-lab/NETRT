@@ -33,6 +33,9 @@ class Reorient_Dicoms:
         y_spacing = tbs.PixelSpacing[1]
         StudyInstanceUID = tbs.StudyInstanceUID
         SeriesInstanceUID = tbs.SeriesInstanceUID
+        prefix=SeriesInstanceUID.split('.')
+        prefix=".".join(prefix[:7])
+
         try:
             SeriesDescription = tbs.SeriesDescription
         except:
