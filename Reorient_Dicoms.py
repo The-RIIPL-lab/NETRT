@@ -35,7 +35,6 @@ class Reorient_Dicoms:
         SeriesInstanceUID = tbs.SeriesInstanceUID
         prefix=SeriesInstanceUID.split('.')
         prefix=".".join(prefix[:7])
-
         try:
             SeriesDescription = tbs.SeriesDescription
         except:

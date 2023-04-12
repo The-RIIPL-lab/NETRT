@@ -199,6 +199,9 @@ def handler(a):
     print("START: Running Mask Addition Process")
     addition.process()
     print("END: Running Mask Addition Process")
+        
+    reorient = Reorient_Dicoms(addition_path)
+    reorient.reorient_driver()
     
     print("START: SENDING Masked DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
