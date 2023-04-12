@@ -1,2 +1,5 @@
 Accession*
 __py*
+test*/
+.ipynb_checkpoints/
+*.ipynb
