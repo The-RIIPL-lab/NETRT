@@ -39,6 +39,7 @@ class Reorient_Dicoms:
             SeriesDescription = tbs.SeriesDescription
         except:
             SeriesDescription = ''
+
         new_series_uid1 = generate_uid(prefix=None)
         new_series_uid2 = generate_uid(prefix=None)
         # create folders for coronal and sagittal views
@@ -59,6 +60,7 @@ class Reorient_Dicoms:
             tbs.SliceThickness = x_spacing
             tbs.SpacingBetweenSlices = x_spacing
             tbs.SeriesDescription = SeriesDescription + ' coronal view'
+            tbs.SeriesNumber = 2
             tbs.SeriesInstanceUID = new_series_uid1
             tbs.StudyInstanceUID = StudyInstanceUID
             tbs.PixelData = data_downsampling.tobytes()
@@ -88,6 +90,7 @@ class Reorient_Dicoms:
             tbs.SliceThickness = y_spacing
             tbs.SpacingBetweenSlices = y_spacing
             tbs.SeriesDescription = SeriesDescription + ' sagittal view'
+            tbs.SeriesNumber = 3
             tbs.SeriesInstanceUID = new_series_uid2
             tbs.StudyInstanceUID = StudyInstanceUID
             tbs.PixelData = data_downsampling.tobytes()

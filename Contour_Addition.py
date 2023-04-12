@@ -133,7 +133,7 @@ class ContourAddition:
                 # Different for each scan in the series, but same image to image
                 ds.SeriesInstanceUID = SeriesInstanceUID
 
-                ds.SeriesNumber = 2
+                ds.SeriesNumber = 1
                 
                 # Consistent within all study/session/scans
                 ds.FrameOfReferenceUID = self.FrameOfReferenceUID
