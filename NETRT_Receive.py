@@ -86,10 +86,9 @@ def handle_store(event):
         # get the paths to the DCM and structure files
         dcm_folder = os.path.join(extract_accession, 'DCM')
         structure_folder = os.path.join(extract_accession, 'Structure')
-        jpeg_folder = os.path.join(extract_accession, 'JPEG_Dicoms')
 
         # make the folders
-        folder_list=[ dcm_folder, structure_folder, jpeg_folder ]
+        folder_list=[ dcm_folder, structure_folder]
         for folder in folder_list:
             if os.path.isdir(folder)==False:
                 print("Creating %s" % folder)
@@ -185,6 +184,10 @@ def handler(a):
     # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
 
+    if len(os.listdir(struct_path)) == 0:
+        print("Empty directory")
+        return False
+
     # Potential Error point: Missing Structure file
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
@@ -278,7 +281,7 @@ def fileWatcherService(pd,currently_processing):
                 os.path.dirname(pd))
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
-                # shutil.rmtree(abs_pd)
+                #shutil.rmtree(abs_pd)
                 sys.exit(0)
                 
                 currently_processing.remove(pd)
