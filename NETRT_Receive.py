@@ -2,9 +2,6 @@ import os, sys
 import argparse
 import signal
 import time
-import Contour_Addition
-import Send_Files
-from Reorient_Dicoms import Reorient_Dicoms
 import threading
 import random
 import shutil
@@ -13,6 +10,10 @@ from pydicom.filewriter import write_file_meta_info
 from pydicom import dcmread
 from pydicom.uid import generate_uid
 from pynetdicom.sop_class import Verification
+import Contour_Addition
+import Send_Files
+import Add_Burn_In
+import Reorient_Dicoms
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
@@ -204,8 +205,11 @@ def handler(a):
     addition.process()
     print("END: Running Mask Addition Process")
         
-    reorient = Reorient_Dicoms(addition_path)
+    reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
     reorient.reorient_driver()
+    
+    burn_in = Add_Burn_In.Add_Burn_In(addition_path)
+    burn_in.apply_watermarks()
     
     print("START: SENDING Masked DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
