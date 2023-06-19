@@ -1,5 +1,4 @@
-from pynetdicom import AE, debug_logger
-# StoragePresentationContexts, build_role, build_context, debug_logger
+from pynetdicom import AE
 from pynetdicom import *
 import os
 from pydicom import dcmread
@@ -16,8 +15,6 @@ class SendFiles:
         self.dcm_path = dcm_path
 
     def send_dicom_folder(self):
-
-        debug_logger()
 
         # Initialise the Application Entity
         ae = AE()

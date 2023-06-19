@@ -14,13 +14,28 @@ import Contour_Addition
 import Send_Files
 import Add_Burn_In
 import Reorient_Dicoms
+import logging
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
 )
 
+# create a basic logger
+logging.basicConfig(
+    level=logging.INFO,  # Set the desired logging level
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler('NETRT.log'),  # Save log messages to a file
+        #logging.StreamHandler()  # Display log messages on the console
+    ]
+)
+
+# Create a logger instance
+logger = logging.getLogger('NETRT')
+
 # parse commandline variables
 message="""RIIPL Labs 2022 - Inline DicomRT contour and dose report generator"""
+logger.info('Start server')
 
 # About this server
 parser = argparse.ArgumentParser(description=message)
@@ -48,39 +63,37 @@ dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
 
-global DEBUG
-DEBUG = args.D
+# Set the deidentify variable by default
+global DEIDENTIFY
+DEIDENTIFY = args.D
+if args.D == True:
+    logger.info("Running in with de-identification flag ON.")
+else:
+    logger.info("Running in with de-identification flag OFF.")
 
 # If started with verbose flag,
 # run in debug mode
-if args.v:
-    print(" > Verbose mode is on.")
+if args.v == True:
+    logger.info("Running with VERBOSE flag on.")
     debug_logger()
-
-if args.D:
-    print(" > DEBUG mode is on. \nUID information will be removed and Patient Info will be modified ")
+else: 
+    logger.info("Running in quiet mode.")
 
 def handle_echo(event):
-    print(" > Echo event!", end='\n')
+    logger.info("ECHO detected")
+    if args.v:
+        print(" > Echo event!", end='\n')
     return 0x0000
 
-
 def handle_store(event):
-
+    logger.info("Handle event detected")
     try:
         # Create a new accession folder
-        #extract_accession = f'Accession_{event.dataset.AccessionNumber}'
         extract_accession = f'UID_{event.dataset.StudyInstanceUID}'
-
-        # Sometimes Accession numbers are empty
-        # if len(extract_accession) < 11:
-        #     extract_accession = f'Accession_NOCODE'
-        #     extract_accession = f'UID_{event.dataset.StudyInstanceUID}'
-
+        logger.info("Receiving {}".format(extract_accession))
         extract_accession = os.path.join('.', extract_accession)
         
         if os.path.isdir(extract_accession) == False:
-            print("\nCreating folder: %s" % extract_accession)
             os.makedirs(extract_accession, exist_ok=True)
 
         # get the paths to the DCM and structure files
@@ -91,7 +104,7 @@ def handle_store(event):
         folder_list=[ dcm_folder, structure_folder]
         for folder in folder_list:
             if os.path.isdir(folder)==False:
-                print("Creating %s" % folder)
+                logger.info("Creating %s" % folder)
                 os.mkdir(folder)
 
         # get most recently created parent folder since it errors out sometimes otherwise
@@ -142,15 +155,16 @@ def handle_store(event):
 
 """Handle a CONN_CLOSE event"""
 def handle_conn_close(event):
-    #address, sequence_num = event.address
-    #sequence_nums.append(sequence_num)
+    logger.info("Connect close event detected")
     return 0x0000
 
 """Handle completed sequence storage"""
 def handler(a):
+    logger.info("Handler event detected. Starting pipeline")
 
     # Announce the pipeline
-    print("Starting pipeline")
+    if args.v:
+        print("Starting pipeline")
 
     # Storage Type: Secondary Capture Image Storage
     # This should be consistent for all SCAN SERIES in the SESSION
@@ -164,7 +178,8 @@ def handler(a):
     # Storage Type: CT Image Storage
     CT_SOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
 
-    if DEBUG:
+    # Create a new random id
+    if DEIDENTIFY == True:
         global RAND_ID
         letters='bcdfhjklmnopqrstvwxyz'
         RAND_ID=''.join(random.choice(letters) for x in range(8))
@@ -175,7 +190,6 @@ def handler(a):
     # get most recently created folder since it errors out sometimes otherwise
     # all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
     # latest_subdir = max(all_subdirs, key=os.path.getmtime)
-
     latest_subdir=a
 
     # get the path to the DCM folder
@@ -193,10 +207,10 @@ def handler(a):
     struct_path = os.path.join(struct_path, struct_file)
 
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
-    if DEBUG:
-        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
+    if DEIDENTIFY:
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
     else:
-        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEBUG, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
+        addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
 
     addition_path = os.path.join(latest_subdir, 'Addition')
 
@@ -233,7 +247,9 @@ def create_new_application_entity():
     return ae
 
 def int_handler(signum, frame):
+    logger.info("Server stopped by interrupt.")
     print("\n ---- Stopping Server ----")
+    
     sys.exit(0)
 
 # return a list of directories that match the Accession Pattern
@@ -276,18 +292,15 @@ def fileWatcherService(pd,currently_processing):
         result=fileWatcher(pd, 3)
         if result:
             print(" > Dicom Directory: %s" % pd)
-            abs_pd=os.path.join(
-                os.getcwd(),
-                os.path.dirname(pd))
+            abs_pd=os.path.join(os.getcwd(), os.path.dirname(pd))
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
-                #shutil.rmtree(abs_pd)
-                sys.exit(0)
-                
+                sys.exit(0)  
                 currently_processing.remove(pd)
                 return True
             else:
                 print(" X: DEBUG error. unable to complete handler()")
+                logger.error("Unable to complete handler()")
                 return False
     else:
         print("{} is currently processing".format(pd))
@@ -295,7 +308,9 @@ def fileWatcherService(pd,currently_processing):
 
 def main():
 
+    # Create ae 
     ae = create_new_application_entity()
+    logger.info("Creating application entity")
 
     # Create a CTRL+C signal to stop the server
     signal.signal(signal.SIGINT, int_handler)
