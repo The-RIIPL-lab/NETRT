@@ -2,7 +2,7 @@ from pynetdicom import AE
 from pynetdicom import *
 import os
 from pydicom import dcmread
-from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage
+from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage, SegmentationStorage
 from pydicom.uid import ImplicitVRLittleEndian, JPEGExtended
 
 
@@ -24,6 +24,8 @@ class SendFiles:
         # JPEGExtended='1.2.840.10008.1.2.4.51'
         ae.add_requested_context(CTImageStorage, ImplicitVRLittleEndian)
         ae.add_requested_context(SecondaryCaptureImageStorage, JPEGExtended)
+        ae.add_requested_context(SegmentationStorage, ImplicitVRLittleEndian)
+
 
         filepath = self.dcm_path
         print('Path to the DICOM directory: {}'.format(filepath))

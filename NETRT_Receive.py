@@ -13,7 +13,8 @@ from pynetdicom.sop_class import Verification
 import Contour_Addition
 import Send_Files
 import Add_Burn_In
-import Reorient_Dicoms
+#import Reorient_Dicoms
+import Segmentations
 import logging
 
 from pynetdicom import (
@@ -99,6 +100,7 @@ def handle_store(event):
         # get the paths to the DCM and structure files
         dcm_folder = os.path.join(extract_accession, 'DCM')
         structure_folder = os.path.join(extract_accession, 'Structure')
+        seg_folder = os.path.join(extract_accession, 'Segmentations')
 
         # make the folders
         folder_list=[ dcm_folder, structure_folder]
@@ -113,6 +115,7 @@ def handle_store(event):
 
         dcm_folder = os.path.join(latest_subdir, 'DCM')
         structure_folder = os.path.join(latest_subdir, 'Structure')
+        seg_folder = os.path.join(latest_subdir, 'Segmentations')
 
         # write structure file based on header metadata
         if 'Structure' in str(event.file_meta):
@@ -198,6 +201,8 @@ def handler(a):
     # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
 
+    seg_path = os.path.join(latest_subdir, 'Segmentations')
+
     if len(os.listdir(struct_path)) == 0:
         print("Empty directory")
         return False
@@ -205,6 +210,7 @@ def handler(a):
     # Potential Error point: Missing Structure file
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
+
 
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
     if DEIDENTIFY:
@@ -218,9 +224,15 @@ def handler(a):
     print("START: Running Mask Addition Process")
     addition.process()
     print("END: Running Mask Addition Process")
+
+    # Create Segmentations
+    print("START: CREATING SEGMENTATION DICOMS")
+    print(f"struct_path is: {struct_path}")
+    segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path , STUDY_INSTANCE_ID)
+    segmentation.process()
         
-    reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
-    reorient.reorient_driver()
+    #reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
+    #reorient.reorient_driver()
     
     burn_in = Add_Burn_In.Add_Burn_In(addition_path)
     burn_in.apply_watermarks()
@@ -228,6 +240,15 @@ def handler(a):
     print("START: SENDING Masked DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
+
+    print("START: SENDING Masked DICOMS")
+    send_files_segmentations = Send_Files.SendFiles(seg_path, dest_ip, dest_port, dest_aetitle)
+    send_files_segmentations.send_dicom_folder()
+
+    print("START: SENDING RTSTRUCT DICOM")
+    # send_files_struct = Send_Files.SendFiles(os.path.join(latest_subdir, 'Structure'), dest_ip, dest_port, dest_aetitle)
+    # send_files_struct.send_dicom_folder()
+
     print("END: Completing pipeline")
     return True
 

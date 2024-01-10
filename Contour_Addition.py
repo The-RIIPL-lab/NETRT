@@ -88,7 +88,7 @@ class ContourAddition:
         if os.path.isdir(output_directory) == False:
             os.mkdir(output_directory)
 
-        def add_overlay_layers(ds, SeriesInstanceUID, mask_dict, match):
+        def add_overlay_layers(ds, mask_dict, match):
             slice_number = int(match) - 1
             slice_str = str(slice_number)
             
@@ -128,15 +128,15 @@ class ContourAddition:
                 ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
 
                 # Consistent within all study/session/scans
-                ds.StudyInstanceUID = self.StudyInstanceUID
+                #s.StudyInstanceUID = self.StudyInstanceUID
 
                 # Different for each scan in the series, but same image to image
-                ds.SeriesInstanceUID = SeriesInstanceUID
+                #ds.SeriesInstanceUID = SeriesInstanceUID
 
                 ds.SeriesNumber = 1
                 
                 # Consistent within all study/session/scans
-                ds.FrameOfReferenceUID = self.FrameOfReferenceUID
+                #ds.FrameOfReferenceUID = self.FrameOfReferenceUID
 
                 ds.Modality = 'CT'
                 ds.ContentDate = str(datetime.date.today()).replace('-','')
@@ -231,7 +231,7 @@ class ContourAddition:
         files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
         print("file count: {}".format(len(files)))
 
-        SeriesInstanceUID = pydicom.uid.generate_uid() # defined for the whole scan series
+        #SeriesInstanceUID = pydicom.uid.generate_uid() # defined for the whole scan series
         
         headers = []
         
@@ -259,7 +259,7 @@ class ContourAddition:
                 # Add the overlay layer
                 # fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)
-                fds = add_overlay_layers(fds, SeriesInstanceUID, mask_dict, counter)
+                fds = add_overlay_layers(fds, mask_dict, counter)
             else:
                 skipcount = skipcount + 1
 
