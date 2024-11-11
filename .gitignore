@@ -5,3 +5,4 @@ UID*
 .ipynb_checkpoints/
 *.ipynb
 *.log
+.venv/

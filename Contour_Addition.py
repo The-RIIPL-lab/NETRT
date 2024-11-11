@@ -3,22 +3,20 @@ import os
 import numpy as np
 import pydicom
 from rt_utils import RTStructBuilder
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from pydicom.pixel_data_handlers.numpy_handler import pack_bits
-from pydicom.pixel_data_handlers.util import apply_modality_lut
-from scipy.ndimage.measurements import center_of_mass
-from math import isnan
+#from pydicom.pixel_data_handlers.util import apply_modality_lut
+#from scipy.ndimage.measurements import center_of_mass
+#from math import isnan
 import datetime
 import re
 
-plt.switch_backend('agg')
-
 class ContourAddition:
 
-    def __init__(self, dcm_path, struct_path, debug=False, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
+    def __init__(self, dcm_path, struct_path, deidentify=True, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
-        self.debug  = debug
+        self.deidentify  = deidentify
         self.RAND_ID = RAND_ID
         self.SOPInstanceUID=CT_SOPInstanceUID
         self.StudyInstanceUID=STUDY_INSTANCE_ID
@@ -96,23 +94,14 @@ class ContourAddition:
             if len(slice_str) < 5:
                slice_str  = '0' * (5 - len(slice_str)) + slice_str
 
-            if self.debug:
-                print("DEBUG: building layer for slice: ", slice_number)
-
             hex_start = 0x6000
 
             MediaSOPClassUID = '1.2.840.10008.5.1.4.1.1.2' # defined for the whole scan series
 
             for mask in mask_dict.keys():
-                if self.debug:
-                    print(" --- Mask: ", mask)
                 mask_array = mask_dict[mask]
                 mask_slice = mask_array[:, :, slice_number]
                 mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
-
-                # pack bytes
-                if self.debug:
-                    print(" --- Adding new Overlay ROI: ", hex(hex_start))
                     
                 packed_bytes = pack_bits(mask_slice)
 
@@ -177,43 +166,19 @@ class ContourAddition:
                     del ds[0x0008, 0x0012] # delete instance creation dates
                     del ds[0x0008, 0x0013] # delete Instance cretaion times
                 
-                ds.PatientAge = '0'
-
-                ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
-                ds.PatientSex= 'O'# delete Gender
-
-                if self.debug: # Debug Mode anonymizes everything crudely
-                    remove_these_tags = ['AccessionNumber']
+                if self.deidentify == False:
+                    pass
+                else:
+                    remove_these_tags = ['AccessionNumber', "MRN"]
                     for tag in remove_these_tags:
                         if tag in ds:
                             delattr(ds, tag)
 
                     ds.PatientID = str("RT_" + self.RAND_ID).upper()
                     ds.PatientName = str("RT_" + self.RAND_ID).upper()
-
-                elif self.debug == False: # if you are not in debug mode
-
-                    # Check Image Comments for ID string (Depricated feature)
-                    if 'ImageComments' in ds: 
-                        if len(ds.ImageComments) > 0:
-                            sid = re.search(r'(?<=sid\:)[A-z0-9]+', ds.ImageComments )
-                            sid=sid.group(0)
-
-                            # Search for SID number
-                            if len(sid) > 0: 
-                                remove_these_tags = ['AccessionNumber']
-                                for tag in remove_these_tags:
-                                    if tag in ds:
-                                        delattr(ds, tag)
-
-                                ds.PatientID = sid
-                                ds.PatientName = sid
-                    else:
-                        # Remove Accession Number to cause PACS error
-                        remove_these_tags = ['AccessionNumber']
-                        for tag in remove_these_tags:
-                            if tag in ds:
-                                delattr(ds, tag)
+                    ds.PatientAge = '0'
+                    ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
+                    ds.PatientSex= 'O'# delete Gender
 
                 hex_start = hex_start + 2
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")

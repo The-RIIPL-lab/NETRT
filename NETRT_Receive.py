@@ -27,7 +27,6 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.FileHandler('NETRT.log'),  # Save log messages to a file
-        #logging.StreamHandler()  # Display log messages on the console
     ]
 )
 
@@ -35,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger('NETRT')
 
 # parse commandline variables
-message="""RIIPL Labs 2022 - Inline DicomRT contour and dose report generator"""
+message="""RIIPL Labs 2022-2024 - Inline DicomRT contour and dose report generator"""
 logger.info('Start server')
 
 # About this server
@@ -49,11 +48,8 @@ parser.add_argument('-dp', type=int, default=8104)
 parser.add_argument('-dip', default="152.11.105.191")
 parser.add_argument('-daet', help='AE title of this server', default='RIIPLXNAT')
 
-# Add
-parser.add_argument('-D', default=False)
-
-# Verbose mode versus not
-parser.add_argument('-v', default=False)
+# Add Deidentify
+parser.add_argument('-D', default=True)
 args = parser.parse_args()
 
 # Define these variables with better names
@@ -63,27 +59,17 @@ local_aetitle = args.aet
 dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
-
 # Set the deidentify variable by default
 global DEIDENTIFY
 DEIDENTIFY = args.D
-if args.D == True:
+
+if DEIDENTIFY == True:
     logger.info("Running in with de-identification flag ON.")
 else:
     logger.info("Running in with de-identification flag OFF.")
 
-# If started with verbose flag,
-# run in debug mode
-if args.v == True:
-    logger.info("Running with VERBOSE flag on.")
-    debug_logger()
-else: 
-    logger.info("Running in quiet mode.")
-
 def handle_echo(event):
     logger.info("ECHO detected")
-    if args.v:
-        print(" > Echo event!", end='\n')
     return 0x0000
 
 def handle_store(event):
@@ -165,10 +151,6 @@ def handle_conn_close(event):
 def handler(a):
     logger.info("Handler event detected. Starting pipeline")
 
-    # Announce the pipeline
-    if args.v:
-        print("Starting pipeline")
-
     # Storage Type: Secondary Capture Image Storage
     # This should be consistent for all SCAN SERIES in the SESSION
     STUDY_INSTANCE_ID = pydicom.uid.generate_uid()
@@ -182,9 +164,9 @@ def handler(a):
     CT_SOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
 
     # Create a new random id
-    if DEIDENTIFY == True:
+    if DEIDENTIFY:
         global RAND_ID
-        letters='bcdfhjklmnopqrstvwxyz'
+        letters='abcdfhjklmnopqrstvwxyz'
         RAND_ID=''.join(random.choice(letters) for x in range(8))
         print("RANDOM ID is %s" % RAND_ID)
     else:
@@ -241,11 +223,11 @@ def handler(a):
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
 
-    print("START: SENDING Masked DICOMS")
+    # print("START: SENDING Masked DICOMS")
     send_files_segmentations = Send_Files.SendFiles(seg_path, dest_ip, dest_port, dest_aetitle)
     send_files_segmentations.send_dicom_folder()
 
-    print("START: SENDING RTSTRUCT DICOM")
+    # print("START: SENDING RTSTRUCT DICOM")
     # send_files_struct = Send_Files.SendFiles(os.path.join(latest_subdir, 'Structure'), dest_ip, dest_port, dest_aetitle)
     # send_files_struct.send_dicom_folder()
 
