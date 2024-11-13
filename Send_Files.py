@@ -1,10 +1,18 @@
-from pynetdicom import AE
-from pynetdicom import *
 import os
-from pydicom import dcmread
+from pynetdicom import AE
 from pynetdicom.sop_class import CTImageStorage, SecondaryCaptureImageStorage, SegmentationStorage
+from pydicom import dcmread
 from pydicom.uid import ImplicitVRLittleEndian, JPEGExtended
+import logging
 
+# Import the logging configuration
+from logging_config import setup_logging
+
+# Ensure the logger is set up
+setup_logging()
+
+# Create a logger instance for this script
+logger = logging.getLogger('Send_Files')
 
 class SendFiles:
 
@@ -15,49 +23,49 @@ class SendFiles:
         self.dcm_path = dcm_path
 
     def send_dicom_folder(self):
+        try:
+            # Initialize the Application Entity
+            ae = AE()
 
-        # Initialise the Application Entity
-        ae = AE()
+            # Add the requested contexts for different SOP Classes and Transfer Syntaxes
+            ae.add_requested_context(CTImageStorage, ImplicitVRLittleEndian)
+            ae.add_requested_context(SecondaryCaptureImageStorage, JPEGExtended)
+            ae.add_requested_context(SegmentationStorage, ImplicitVRLittleEndian)
 
-        # Add the CT image context for the 
-        # ExplicitVRLittleEndian = '1.2.840.10008.1.2.1'
-        # JPEGExtended='1.2.840.10008.1.2.4.51'
-        ae.add_requested_context(CTImageStorage, ImplicitVRLittleEndian)
-        ae.add_requested_context(SecondaryCaptureImageStorage, JPEGExtended)
-        ae.add_requested_context(SegmentationStorage, ImplicitVRLittleEndian)
+            filepath = self.dcm_path
+            logger.info(f"Path to the DICOM directory: {filepath}")
 
+            # Load the data
+            dicom_files = [f for f in os.listdir(filepath) if f.endswith('.dcm')]
 
-        filepath = self.dcm_path
-        print('Path to the DICOM directory: {}'.format(filepath))
+            # Associate with peer AE at IP and port
+            assoc = ae.associate(
+                self.dest_ip,
+                self.dest_port,
+                ae_title=self.dest_aetitle
+            )
 
-        # load the data
-        dicom_files = os.listdir(filepath)
-        # Associate with peer AE at IP 127.0.0.1 and port 11112
-        assoc = ae.associate(
-            self.dest_ip,
-            self.dest_port,
-            ae_title=self.dest_aetitle,
-            # contexts=selected_contexts,
-            # ext_neg=negotiation_items
-        )
-        if assoc.is_established:
-            for cx in assoc.accepted_contexts:
-                cx._as_scu = True
-            for dicom in dicom_files:
-                ds = dcmread(os.path.join(filepath, dicom))
-                # print(cx)
-                # Use the C-STORE service to send the dataset
-                # returns the response status as a pydicom Dataset
-                status = assoc.send_c_store(ds)
-                print(ds)
-                # Check the status of the storage request
-                if status:
-                    # If the storage request succeeded this will be 0x0000
-                    print('C-STORE request status: 0x{0:04x}'.format(status.Status))
-                else:
-                    print('Connection timed out, was aborted or received invalid response')
-        else:
-            print('Association rejected, aborted or never connected')
+            if assoc.is_established:
+                logger.info(f"Association established with {self.dest_aetitle} at {self.dest_ip}:{self.dest_port}")
 
-        # Release the association
-        assoc.release()
+                for dicom in dicom_files:
+                    try:
+                        ds = dcmread(os.path.join(filepath, dicom))
+                        # Use the C-STORE service to send the dataset
+                        status = assoc.send_c_store(ds)
+                        if status and status.Status == 0x0000:
+                            logger.info(f"C-STORE request for {dicom} successful: 0x{status.Status:04X}")
+                        else:
+                            logger.error(f"C-STORE request for {dicom} failed with status: 0x{status.Status:04X}" if status else "Connection timed out, was aborted or received invalid response")
+                    except Exception as e:
+                        logger.error(f"Error reading or sending DICOM file {dicom}: {e}")
+            else:
+                logger.error(f"Association rejected, aborted or never connected to {self.dest_aetitle} at {self.dest_ip}:{self.dest_port}")
+
+        except Exception as e:
+            logger.error(f"An error occurred during association or sending files: {e}")
+        finally:
+            # Ensure the association is released
+            if assoc.is_established:
+                assoc.release()
+                logger.info("Association released")
