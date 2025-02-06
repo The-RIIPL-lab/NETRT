@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger('NETRT')
 
 # parse commandline variables
-message="""RIIPL Labs 2022-2024 - Inline DicomRT contour and dose report generator"""
+message="""RIIPL Labs 2022-2025 - Inline DicomRT contour and dose report generator"""
 logger.info('Start server')
 
 # About this server
@@ -44,9 +44,9 @@ parser.add_argument('-i', default="127.0.0.1")
 parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 
 # About the destination server
-parser.add_argument('-dp', type=int, default=8104)
-parser.add_argument('-dip', default="152.11.105.191")
-parser.add_argument('-daet', help='AE title of this server', default='RIIPLXNAT')
+parser.add_argument('-dp', type=int, default=11112)
+parser.add_argument('-dip', default="152.11.105.71")
+parser.add_argument('-daet', help='AE title of this server', default='RADIORIIPL')
 
 # Add Deidentify
 parser.add_argument('-D', default=True)
@@ -210,11 +210,16 @@ def handler(a):
     # Create Segmentations
     print("START: CREATING SEGMENTATION DICOMS")
     print(f"struct_path is: {struct_path}")
-    segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path , STUDY_INSTANCE_ID)
+
+    if DEIDENTIFY:
+        print(addition_path)
+        segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID, RAND_ID)
+    else:
+        segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID)
     segmentation.process()
         
-    #reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
-    #reorient.reorient_driver()
+    # reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
+    # reorient.reorient_driver()
     
     burn_in = Add_Burn_In.Add_Burn_In(addition_path)
     burn_in.apply_watermarks()

@@ -9,11 +9,12 @@ from pydicom.filereader import dcmread
 
 class Segmentations:
 
-    def __init__(self, dcm_path, struct_path, seg_path, debug=False,  STUDY_INSTANCE_ID=''):
+    def __init__(self, dcm_path, struct_path, seg_path, deidentify, STUDY_INSTANCE_ID='', RAND_ID='', debug=False):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
         self.seg_path = seg_path
-
+        self.deidentify = deidentify
+        self.RAND_ID = RAND_ID
         self.StudyInstanceUID=STUDY_INSTANCE_ID
     
     def process(self):
@@ -104,9 +105,8 @@ class Segmentations:
             dtype=bool
         )
         
-        print(mask.shape)
+        # print(mask.shape)
         
-        #for i in range(mask_array.shape[2]-1,0,-1):
         for i in range(0,mask_array.shape[2],1):
             mask[i] = mask_array[:,:,i]
 
@@ -146,6 +146,13 @@ class Segmentations:
             device_serial_number='',
             omit_empty_frames=False
         )
+
+            # Deidentify the patient information if required
+        if self.deidentify:
+            seg_dataset.PatientName = str("RT_" + self.RAND_ID).upper()
+            seg_dataset.PatientID = str("RT_" + self.RAND_ID).upper()
+            seg_dataset.PatientBirthDate = ''
+            seg_dataset.PatientSex = ''
 
         seg_dataset.AccessionNumber =''
 

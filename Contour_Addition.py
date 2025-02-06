@@ -4,7 +4,7 @@ import numpy as np
 import pydicom
 from rt_utils import RTStructBuilder
 #import matplotlib.pyplot as plt
-from pydicom.pixel_data_handlers.numpy_handler import pack_bits
+from pydicom.pixels import pack_bits
 #from pydicom.pixel_data_handlers.util import apply_modality_lut
 #from scipy.ndimage.measurements import center_of_mass
 #from math import isnan
@@ -178,7 +178,7 @@ class ContourAddition:
                     ds.PatientName = str("RT_" + self.RAND_ID).upper()
                     ds.PatientAge = '0'
                     ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
-                    ds.PatientSex= 'O'# delete Gender
+                    ds.PatientSex= 'O' # delete Gender
 
                 hex_start = hex_start + 2
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
@@ -201,7 +201,7 @@ class ContourAddition:
         headers = []
         
         for f in files:
-            ds = pydicom.read_file(os.path.join(self.dcm_path, f))
+            ds = pydicom.dcmread(os.path.join(self.dcm_path, f))
             headers.append((ds[0x0020, 0x0013].value, f))
     
             # sort by header information (image number) and return a list of filenames sorted accordingly 
