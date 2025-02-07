@@ -6,6 +6,7 @@ from math import isnan
 import highdicom as hd
 from pydicom.sr.codedict import codes
 from pydicom.filereader import dcmread
+from DicomAnonymizer import DicomAnonymizer
 
 class Segmentations:
 
@@ -16,6 +17,10 @@ class Segmentations:
         self.deidentify = deidentify
         self.RAND_ID = RAND_ID
         self.StudyInstanceUID=STUDY_INSTANCE_ID
+
+        if deidentify == True:
+            print("Starting Anonymizer")
+            self.anonymizer = DicomAnonymizer()
     
     def process(self):
 
@@ -126,7 +131,7 @@ class Segmentations:
             algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
             algorithm_identification=algorithm_identification,
             tracking_uid=hd.UID(),
-            tracking_id='test segmentation of computed tomography image'
+            tracking_id='FOR RESEARCH USE ONLY'
         )
         
         # Create the Segmentation instance
@@ -137,7 +142,7 @@ class Segmentations:
             segment_descriptions=[description_segment_1],
             series_instance_uid=hd.UID(),
             series_number=99,
-            series_description=f"Contour label: {struct_name}",
+            series_description=f"RESEACH USE ONLY : CONTOUR {struct_name}",
             sop_instance_uid=hd.UID(),
             instance_number=1,
             manufacturer=data.Manufacturer,
@@ -147,13 +152,10 @@ class Segmentations:
             omit_empty_frames=False
         )
 
-            # Deidentify the patient information if required
-        if self.deidentify:
+        # Deidentify the patient information if required
+        if self.deidentify == True:
+            seg_dataset = self.anonymizer.anonymize(seg_dataset)
             seg_dataset.PatientName = str("RT_" + self.RAND_ID).upper()
             seg_dataset.PatientID = str("RT_" + self.RAND_ID).upper()
-            seg_dataset.PatientBirthDate = ''
-            seg_dataset.PatientSex = ''
-
-        seg_dataset.AccessionNumber =''
 
         seg_dataset.save_as(out_file)

@@ -7,7 +7,7 @@ import random
 import shutil
 import pydicom
 from pydicom.filewriter import write_file_meta_info
-from pydicom import dcmread
+#from pydicom import dcmread
 from pydicom.uid import generate_uid
 from pynetdicom.sop_class import Verification
 import Contour_Addition
@@ -73,7 +73,10 @@ if not is_ip_valid(dest_ip, valid_networks):
 
 # Set the deidentify variable by default
 global DEIDENTIFY
-DEIDENTIFY = args.D
+if args.D == 'False' or args.D == False:
+    DEIDENTIFY = False
+else:
+    DEIDENTIFY = True
 
 if DEIDENTIFY == True:
     logger.info("Running in with de-identification flag ON.")
@@ -179,7 +182,7 @@ def handler(a):
     if DEIDENTIFY:
         global RAND_ID
         letters='abcdfhjklmnopqrstvwxyz'
-        RAND_ID=''.join(random.choice(letters) for x in range(8))
+        RAND_ID=''.join(random.choice(letters) for x in range(8)).upper()
         print("RANDOM ID is %s" % RAND_ID)
     else:
         RAND_ID=""
@@ -189,12 +192,9 @@ def handler(a):
     # latest_subdir = max(all_subdirs, key=os.path.getmtime)
     latest_subdir=a
 
-    # get the path to the DCM folder
+    # define path directories
     dcm_path = os.path.join(latest_subdir, 'DCM')
-
-    # get the path to the structure file
     struct_path = os.path.join(latest_subdir, 'Structure')
-
     seg_path = os.path.join(latest_subdir, 'Segmentations')
 
     if len(os.listdir(struct_path)) == 0:
@@ -205,9 +205,9 @@ def handler(a):
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
 
-
     # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
-    if DEIDENTIFY:
+    print(f"DEIDENTIFY is set to {DEIDENTIFY}")
+    if DEIDENTIFY == True:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
     else:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
@@ -220,18 +220,13 @@ def handler(a):
     print("END: Running Mask Addition Process")
 
     # Create Segmentations
-    print("START: CREATING SEGMENTATION DICOMS")
-    print(f"struct_path is: {struct_path}")
-
-    if DEIDENTIFY:
-        segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID, RAND_ID)
-    else:
+    if DEIDENTIFY == False:
+        print("START: CREATING SEGMENTATION DICOMS")
+        print(f"struct_path is: {struct_path}")
         segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID)
-    segmentation.process()
-        
-    # reorient = Reorient_Dicoms.Reorient_Dicoms(addition_path)
-    # reorient.reorient_driver()
+        segmentation.process()
     
+    # ALWAYS add the burn in disclaimer on the T1w images
     burn_in = Add_Burn_In.Add_Burn_In(addition_path)
     burn_in.apply_watermarks()
     
@@ -239,13 +234,18 @@ def handler(a):
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
 
-    # print("START: SENDING Masked DICOMS")
-    send_files_segmentations = Send_Files.SendFiles(seg_path, dest_ip, dest_port, dest_aetitle)
-    send_files_segmentations.send_dicom_folder()
+    # The SEG file is created as an overlay on the original image. Thus, only available in deidenfied mode.
+    # THIS DOES NOT HAVE "FOR RESEARCH USE ONLY APPENDED"
+    if DEIDENTIFY == False:
+        print("START: SENDING DICOM SEG FILE")
+        send_files_segmentations = Send_Files.SendFiles(seg_path, dest_ip, dest_port, dest_aetitle)
+        send_files_segmentations.send_dicom_folder()
 
-    # print("START: SENDING RTSTRUCT DICOM")
-    # send_files_struct = Send_Files.SendFiles(os.path.join(latest_subdir, 'Structure'), dest_ip, dest_port, dest_aetitle)
-    # send_files_struct.send_dicom_folder()
+    # This assumes that the Structure image used for countour is already in PACS, but the RTSTRUCT is not. 
+    # if DEIDENTIFY == False:
+    #     print("START: SENDING RTSTRUCT DICOM")
+    #     send_files_struct = Send_Files.SendFiles(os.path.join(latest_subdir, 'Structure'), dest_ip, dest_port, dest_aetitle)
+    #     send_files_struct.send_dicom_folder()
 
     print("END: Completing pipeline")
     return True

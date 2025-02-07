@@ -5,15 +5,13 @@ import pydicom
 from rt_utils import RTStructBuilder
 #import matplotlib.pyplot as plt
 from pydicom.pixels import pack_bits
-#from pydicom.pixel_data_handlers.util import apply_modality_lut
-#from scipy.ndimage.measurements import center_of_mass
-#from math import isnan
 import datetime
 import re
+from DicomAnonymizer import DicomAnonymizer
 
 class ContourAddition:
 
-    def __init__(self, dcm_path, struct_path, deidentify=True, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
+    def __init__(self, dcm_path, struct_path, deidentify, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
         self.deidentify  = deidentify
@@ -22,7 +20,14 @@ class ContourAddition:
         self.StudyInstanceUID=STUDY_INSTANCE_ID
         self.FrameOfReferenceUID=FOD_REF_ID
 
+        if deidentify == True:
+            print("Starting Anonymizer")
+            self.anonymizer = DicomAnonymizer()
+
     def process(self):
+
+        # Generate a new SeriesInstanceUID for the series
+        SeriesInstanceUID = pydicom.uid.generate_uid()
 
         # Load dicom files
         RTstruct= RTStructBuilder.create_from(
@@ -106,23 +111,23 @@ class ContourAddition:
                 packed_bytes = pack_bits(mask_slice)
 
                 # These classes are consistent
-                ds.file_meta.MediaSOPClassUID = MediaSOPClassUID
+                #ds.file_meta.MediaSOPClassUID = MediaSOPClassUID
                 ds.SOPClassUID = MediaSOPClassUID
 
                 # There change image to image
                 ds.file_meta.MediaSOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
                 ds.SOPInstanceUID = ds.file_meta.MediaSOPInstanceUID 
                 
-                ds.StudyDescription = "Unapproved Treatment Plan CT w Mask"
-                ds.SeriesDescription = "Unapproved Treatment Plan CT w Mask"
+                ds.StudyDescription = "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
+                ds.SeriesDescription = "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
 
                 # Consistent within all study/session/scans
-                #s.StudyInstanceUID = self.StudyInstanceUID
+                #ds.StudyInstanceUID = self.StudyInstanceUID
 
                 # Different for each scan in the series, but same image to image
-                #ds.SeriesInstanceUID = SeriesInstanceUID
+                ds.SeriesInstanceUID = SeriesInstanceUID
 
-                ds.SeriesNumber = 1
+                ds.SeriesNumber = 98
                 
                 # Consistent within all study/session/scans
                 #ds.FrameOfReferenceUID = self.FrameOfReferenceUID
@@ -166,26 +171,34 @@ class ContourAddition:
                     del ds[0x0008, 0x0012] # delete instance creation dates
                     del ds[0x0008, 0x0013] # delete Instance cretaion times
                 
-                if self.deidentify == False:
-                    pass
-                else:
-                    remove_these_tags = ['AccessionNumber', "MRN"]
-                    for tag in remove_these_tags:
-                        if tag in ds:
-                            delattr(ds, tag)
+                if self.deidentify == True:
 
-                    ds.PatientID = str("RT_" + self.RAND_ID).upper()
-                    ds.PatientName = str("RT_" + self.RAND_ID).upper()
-                    ds.PatientAge = '0'
-                    ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
-                    ds.PatientSex= 'O' # delete Gender
+                    anonymized_dcm = self.anonymizer.anonymize(ds)
+                    anonymized_dcm.PatientID = str("RT_" + self.RAND_ID).upper()
+                    anonymized_dcm.PatientName = str("RT_" + self.RAND_ID).upper()
+
+                    # remove_these_tags = ['AccessionNumber', "MRN"]
+                    # for tag in remove_these_tags:
+                    #     if tag in ds:
+                    #         delattr(ds, tag)
+
+                    # ds.PatientID = str("RT_" + self.RAND_ID).upper()
+                    # ds.PatientName = str("RT_" + self.RAND_ID).upper()
+                    # ds.PatientAge = '0'
+                    # ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
+                    # ds.PatientSex= 'O' # delete Gender
 
                 hex_start = hex_start + 2
                 out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
 
-                print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
-                ds.save_as(out_fn)
-            return ds
+                #print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
+                if self.deidentify == True:
+                    anonymized_dcm.save_as(out_fn)
+                    return anonymized_dcm
+                else:
+                    ds.save_as(out_fn)
+                    return ds
+
 
         ## FROM PYDICOM EXAMPLE
         # Read the anatomical dicom file
