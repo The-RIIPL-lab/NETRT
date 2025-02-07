@@ -7,7 +7,6 @@ import random
 import shutil
 import pydicom
 from pydicom.filewriter import write_file_meta_info
-#from pydicom import dcmread
 from pydicom.uid import generate_uid
 from pynetdicom.sop_class import Verification
 import Contour_Addition
@@ -16,6 +15,8 @@ import Add_Burn_In
 import Segmentations
 import logging
 from ip_validation import load_valid_networks, is_ip_valid
+
+from Contour_Extraction import ContourExtraction
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
@@ -205,7 +206,14 @@ def handler(a):
     struct_file = os.listdir(struct_path)[0]
     struct_path = os.path.join(struct_path, struct_file)
 
-    # create an instance of ContourAddition and ContourExtraction with the paths to the DCM and structure files as arguments
+    # 02/07/2025 - I am removing JPEG creation again because of alignment issues with the mask!!
+    # # Create an instance of ContourExtraction with the path to the DCM files as argument
+    # contour_extraction = ContourExtraction(dcm_path, struct_path)
+    # print("START: Running Contour Extraction Process")
+    # contours = contour_extraction.process()
+    # print("END: Running Contour Extraction Process")
+
+    # create an instance of ContourAddition with the paths to the DCM and structure files as arguments
     print(f"DEIDENTIFY is set to {DEIDENTIFY}")
     if DEIDENTIFY == True:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
@@ -314,7 +322,7 @@ def fileWatcherService(pd,currently_processing):
             abs_pd=os.path.join(os.getcwd(), os.path.dirname(pd))
             if handler(abs_pd):
                 print(" > Removing full Accession directory")
-                sys.exit(0)  
+                shutil.rmtree(abs_pd)
                 currently_processing.remove(pd)
                 return True
             else:
