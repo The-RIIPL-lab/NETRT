@@ -8,6 +8,12 @@ The RIIPL Inline contour rendering server receives Radiotherapy DICOM images (Di
 
 The output series are then automatically forwarded to the destination location/port and removed from local storage.
 
+### New to Version 0.2
+- `valid_networks.json` file to provide safe IP ranges for destination servers. While not 100% protection, this is a secondary check to make sure you are sending your data to the correct IP Address. 
+- Improved anonymization when deidentifying data
+- Dicom SEG exports that can be viewed on original structural images (not available in deidentified mode)
+- Fwding of RT images to destination for viewers that support DICOMRT display (Required origional T1 series to existo on PACS. Not available in deidentified mode)
+
 ### Installation 
 ```shell
 git clone git remote add origin http://rhgitserv01pv.medctr.ad.wfubmc.edu/rbarcus/NETRT.git
@@ -31,4 +37,5 @@ python ./NETRT_Receive.py \
 -dp <destination port> \
 -dip <destination IP> \
 -daet <destination at title>
+-D <deidentify: True or False> 
 ```
