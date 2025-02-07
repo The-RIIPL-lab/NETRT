@@ -13,9 +13,9 @@ from pynetdicom.sop_class import Verification
 import Contour_Addition
 import Send_Files
 import Add_Burn_In
-#import Reorient_Dicoms
 import Segmentations
 import logging
+from ip_validation import load_valid_networks, is_ip_valid
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
@@ -48,6 +48,8 @@ parser.add_argument('-dp', type=int, default=11112)
 parser.add_argument('-dip', default="152.11.105.71")
 parser.add_argument('-daet', help='AE title of this server', default='RADIORIIPL')
 
+parser.add_argument('-nvf', default="valid_networks.json", help='Path to the network validation JSON file')
+
 # Add Deidentify
 parser.add_argument('-D', default=True)
 args = parser.parse_args()
@@ -59,6 +61,16 @@ local_aetitle = args.aet
 dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
+network_config_file = args.nvf
+
+# Load the list of valid networks
+valid_networks = load_valid_networks(network_config_file)
+
+# Validate the destination IP address
+if not is_ip_valid(dest_ip, valid_networks):
+    logger.error("Invalid destination IP address. Exiting.")
+    sys.exit(1)
+
 # Set the deidentify variable by default
 global DEIDENTIFY
 DEIDENTIFY = args.D
@@ -212,7 +224,6 @@ def handler(a):
     print(f"struct_path is: {struct_path}")
 
     if DEIDENTIFY:
-        print(addition_path)
         segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID, RAND_ID)
     else:
         segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID)
