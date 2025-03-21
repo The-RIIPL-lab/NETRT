@@ -1,10 +1,13 @@
-# RIIPL Inline contour rendering
+# RIIPL Inline contour rendering (CONNECT)
 
 ### Description
-The RIIPL Inline contour rendering server receives Radiotherapy DICOM images (DicomRT) with contours (RTSTRUCT) and an accompanying anatomtical MR or CT image. This tool extracts the contours from the RTSTUCT file and creates two new image series:
+The RIIPL Inline contour rendering server receives Radiotherapy DICOM images (DicomRT) with contours (RTSTRUCT) and an accompanying anatomtical MR or CT image. 
+This tool was designed as a means to share DICOMRT data to PACS system with no RT visualization support. Later updates have allowed alternative processing methods including the creation of DICOM SEG files. 
 
-1. A copy of the anat image with binary masks of the contours encoded in the Overlay Plane layers of the DICOM file. (windowable)
-2. A stack of JPEG images with the contour masks rendered on the anatomical images with labels and colors for the various ROIs. (non-windowable)
+The default function of this tool is to:
+
+1. Anonymizing incoming data and assign a random ID string
+2. Create a new copy of the image for Research Only that uses the Overplane later to render a DICOM RT contour on the CT image. (windowable)
 
 The output series are then automatically forwarded to the destination location/port and removed from local storage.
 
@@ -16,7 +19,7 @@ The output series are then automatically forwarded to the destination location/p
 
 ### Installation 
 ```shell
-git clone git remote add origin http://rhgitserv01pv.medctr.ad.wfubmc.edu/rbarcus/NETRT.git
+git clone git remote add origin https://github.com/The-RIIPL-lab/NETRT
 
 cd NETRT
 
@@ -37,5 +40,5 @@ python ./NETRT_Receive.py \
 -dp <destination port> \
 -dip <destination IP> \
 -daet <destination at title>
--D <deidentify: True or False> 
+-D <deidentify: "True" or "False", default is True> 
 ```

@@ -162,14 +162,9 @@ class JPEGToDICOM_Class:
 
             dt = datetime.time(0, 1, 6, 10)
             new_ds.AcquisitionTime = dt.strftime('%H%M%S.%f')
-
             new_ds.SecondaryCaptureDeviceManufacturer = 'RIIPL NETRT'
-            new_ds.is_little_endian = True
-            new_ds.is_implicit_VR = False
-        
             new_ds.SeriesDescription = "Unapproved Treatment Plan JPEG"
-            new_ds.StudyDescription = "Unapproved Treatment Plan JPEG"
-            
+            new_ds.StudyDescription = "Unapproved Treatment Plan JPEG"            
             new_ds.BitsStored = 8
             new_ds.BitsAllocated = 8
             new_ds.SamplesPerPixel = 3
@@ -240,7 +235,7 @@ class JPEGToDICOM_Class:
 
             print(" - Creating %s" % f"{save_name}.dcm")
             instance_number +=1
-            new_ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", write_like_original=False)
+            new_ds.save_as(f"{self.jpg_folder_path}/{save_name}.dcm", enforce_file_format=False, implicit_vr=False, little_endian=True)
             del ds
             del new_ds
 

@@ -7,7 +7,6 @@ import random
 import shutil
 import pydicom
 from pydicom.filewriter import write_file_meta_info
-from pydicom.uid import generate_uid
 from pynetdicom.sop_class import Verification
 import Contour_Addition
 import Send_Files
@@ -15,8 +14,6 @@ import Add_Burn_In
 import Segmentations
 import logging
 from ip_validation import load_valid_networks, is_ip_valid
-
-from Contour_Extraction import ContourExtraction
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
@@ -27,6 +24,7 @@ logging.basicConfig(
     level=logging.INFO,  # Set the desired logging level
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
+        logging.StreamHandler(),  # Log to STDOUT
         logging.FileHandler('NETRT.log'),  # Save log messages to a file
     ]
 )
@@ -130,7 +128,7 @@ def handle_store(event):
                 f.write(b'\x00' * 128)
                 f.write(b'DICM')
 
-                write_file_meta_info(f, event.file_meta)
+                write_file_meta_info(f, event.file_meta, enforce_standard=True)
 
                 # Write the raw encoded dataset
                 f.write(event.request.DataSet.getvalue())
@@ -364,7 +362,7 @@ def main():
                     acc=os.path.dirname(pd)
                     threads[acc] = threading.Thread(target=fileWatcherService,
                         args=(pd,currently_processing))
-                    time.sleep(1)
+                    time.sleep(2)
                     threads[acc].start()
                     print("\n --- Thread started ---")
 

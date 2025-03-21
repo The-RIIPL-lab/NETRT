@@ -75,6 +75,7 @@ class Reorient_Dicoms:
                 tbs.add_new((0x6000, 0x3000), 'OW', pack_bits(overlay_downsampling))
             save_name = imgs[0].replace('.dcm', f'.x-{x}.dcm')
             tbs.save_as(save_name)
+
             test = pydicom.read_file(save_name).overlay_array(0x6000)
             if overlay_downsampling.max()==1:                
                 print(save_name)

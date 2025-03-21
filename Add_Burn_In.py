@@ -91,7 +91,7 @@ class Add_Burn_In:
         new_dcm.PixelData = new_pixel_data
     
         # Write the new DICOM dataset to a file
-        pydicom.dcmwrite(input_filename, new_dcm, write_like_original=True)
+        pydicom.dcmwrite(input_filename, new_dcm, enforce_file_format=True)
         
     def apply_watermarks(self):
         for dicom_file in self.dicom_filepaths:
