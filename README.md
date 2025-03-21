@@ -20,7 +20,6 @@ The output series are then automatically forwarded to the destination location/p
 ### Installation 
 ```shell
 git clone git remote add origin https://github.com/The-RIIPL-lab/NETRT
-
 cd NETRT
 
 # For conda users
@@ -29,6 +28,16 @@ conda env create -f ./conda.yml
 # For pip users, in your virtual env
 # this requires Python 3.7+
 pip install -r requirements.txt
+```
+
+### Example `valid_network_ranges.json` file
+```json
+{
+    "valid_networks": [
+        "10.10.0.0/16",
+        "192.168.1.0/32"
+    ]
+}
 ```
 
 ### Starting the server
@@ -40,5 +49,5 @@ python ./NETRT_Receive.py \
 -dp <destination port> \
 -dip <destination IP> \
 -daet <destination at title>
--D <deidentify: "True" or "False", default is True> 
+-D <deidentify: "True" or "False", default is True>
 ```
