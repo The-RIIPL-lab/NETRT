@@ -1,19 +1,42 @@
 import json
 import ipaddress
+from logger_module import setup_logger
+
+# Get logger
+logger = setup_logger()
 
 def load_valid_networks(filename):
+    """
+    Load the list of valid network ranges from a JSON file.
+    
+    Args:
+        filename (str): Path to the JSON file containing valid network ranges
+        
+    Returns:
+        list: List of valid network CIDR ranges
+    """
     try:
         with open(filename, 'r') as file:
             data = json.load(file)
             return data.get('valid_networks', [])
     except FileNotFoundError:
-        print(f"Error: The file {filename} was not found.")
+        logger.error(f"The file {filename} was not found.")
         return []
     except json.JSONDecodeError:
-        print("Error: Failed to decode JSON.")
+        logger.error("Failed to decode JSON.")
         return []
 
 def is_ip_valid(ip, networks):
+    """
+    Check if an IP address is within any of the valid network ranges.
+    
+    Args:
+        ip (str): IP address to validate
+        networks (list): List of valid network CIDR ranges
+        
+    Returns:
+        bool: True if the IP is within any valid network range, False otherwise
+    """
     try:
         ip_obj = ipaddress.ip_address(ip)
         for network in networks:
@@ -21,7 +44,7 @@ def is_ip_valid(ip, networks):
                 return True
         return False
     except ValueError:
-        print(f"Error: {ip} is not a valid IP address.")
+        logger.error(f"{ip} is not a valid IP address.")
         return False
 
 if __name__ == "__main__":
@@ -30,6 +53,6 @@ if __name__ == "__main__":
     # Example usage
     test_ip = "192.168.1.50"  # This should return True
     if is_ip_valid(test_ip, valid_networks):
-        print(f"The IP address {test_ip} is within the valid network ranges.")
+        logger.info(f"The IP address {test_ip} is within the valid network ranges.")
     else:
-        print(f"The IP address {test_ip} is NOT within the valid network ranges.")
+        logger.warning(f"The IP address {test_ip} is NOT within the valid network ranges.")

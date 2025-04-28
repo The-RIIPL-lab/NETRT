@@ -1,14 +1,14 @@
 import pydicom
-import glob
 import numpy as np
-import os
+from pathlib import Path
 from pydicom.uid import generate_uid
 from pydicom.pixel_data_handlers.numpy_handler import pack_bits
 class Reorient_Dicoms:
     def __init__(self, directory):
         self.directory = directory
     def reorient_driver(self):
-        imgs = glob.glob(os.path.join(self.directory, '*.dcm'))
+        # Collect all DICOM files in the directory using pathlib
+        imgs = sorted(Path(self.directory).glob('*.dcm'))
         # save the pixel arr in an SL:array dict and then stack the array by ascending order of SL.
         st, arr, overlay_arr = {}, [], []
         for img_ in imgs:
@@ -73,7 +73,8 @@ class Reorient_Dicoms:
                 tbs.add_new((0x6000, 0x0010), 'US', data_downsampling.shape[0])
                 tbs.add_new((0x6000, 0x0011), 'US', data_downsampling.shape[1])
                 tbs.add_new((0x6000, 0x3000), 'OW', pack_bits(overlay_downsampling))
-            save_name = imgs[0].replace('.dcm', f'.x-{x}.dcm')
+            # Construct output filename for coronal view
+            save_name = imgs[0].with_name(imgs[0].stem + f'.x-{x}.dcm')
             tbs.save_as(save_name)
 
             test = pydicom.read_file(save_name).overlay_array(0x6000)
@@ -104,5 +105,6 @@ class Reorient_Dicoms:
                 tbs.add_new((0x6000, 0x0010), 'US', data_downsampling.shape[0])
                 tbs.add_new((0x6000, 0x0011), 'US', data_downsampling.shape[1])
                 tbs.add_new((0x6000, 0x3000), 'OW', pack_bits(overlay_downsampling))
-            save_name = imgs[0].replace('.dcm', f'.y-{y}.dcm')
+            # Construct output filename for sagittal view
+            save_name = imgs[0].with_name(imgs[0].stem + f'.y-{y}.dcm')
             tbs.save_as(save_name)

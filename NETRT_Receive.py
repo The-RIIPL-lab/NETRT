@@ -1,4 +1,5 @@
-import os, sys
+import sys
+from pathlib import Path
 import argparse
 import signal
 import time
@@ -12,25 +13,14 @@ import Contour_Addition
 import Send_Files
 import Add_Burn_In
 import Segmentations
-import logging
-from ip_validation import load_valid_networks, is_ip_valid
+from logger_module import setup_logger
 
 from pynetdicom import (
     AE, debug_logger, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
 )
 
-# create a basic logger
-logging.basicConfig(
-    level=logging.INFO,  # Set the desired logging level
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # Log to STDOUT
-        logging.FileHandler('NETRT.log'),  # Save log messages to a file
-    ]
-)
-
 # Create a logger instance
-logger = logging.getLogger('NETRT')
+logger = setup_logger()
 
 # parse commandline variables
 message="""RIIPL Labs 2022-2025 - Inline DicomRT contour and dose report generator"""
@@ -47,7 +37,7 @@ parser.add_argument('-dp', type=int, default=11112)
 parser.add_argument('-dip', default="152.11.105.71")
 parser.add_argument('-daet', help='AE title of this server', default='RADIORIIPL')
 
-parser.add_argument('-nvf', default="valid_networks.json", help='Path to the network validation JSON file')
+# Removed network validation argument to drop IP range checking
 
 # Add Deidentify
 parser.add_argument('-D', default=True)
@@ -60,14 +50,20 @@ local_aetitle = args.aet
 dest_port = args.dp
 dest_ip = args.dip
 dest_aetitle = args.daet
-network_config_file = args.nvf
-
-# Load the list of valid networks
-valid_networks = load_valid_networks(network_config_file)
-
-# Validate the destination IP address
-if not is_ip_valid(dest_ip, valid_networks):
-    logger.error("Invalid destination IP address. Exiting.")
+# Perform DICOM C-ECHO test to verify connectivity to destination AE
+ae_echo = AE()
+ae_echo.add_requested_context(Verification)
+logger.info(f"Testing DICOM C-ECHO connectivity to {dest_aetitle} at {dest_ip}:{dest_port}")
+assoc_echo = ae_echo.associate(dest_ip, dest_port, ae_title=dest_aetitle)
+if assoc_echo.is_established:
+    status_echo = assoc_echo.send_c_echo()
+    assoc_echo.release()
+    if not status_echo or status_echo.Status != 0x0000:
+        logger.error(f"DICOM C-ECHO test failed with status: {getattr(status_echo, 'Status', 'None')}")
+        sys.exit(1)
+    logger.info("DICOM C-ECHO test succeeded")
+else:
+    logger.error("Failed to establish association for C-ECHO test")
     sys.exit(1)
 
 # Set the deidentify variable by default
@@ -83,44 +79,57 @@ else:
     logger.info("Running in with de-identification flag OFF.")
 
 def handle_echo(event):
+    """
+    Handle DICOM C-ECHO request.
+    
+    Args:
+        event: The echo event
+        
+    Returns:
+        int: Status code 0x0000 (Success)
+    """
     logger.info("ECHO detected")
     return 0x0000
 
 def handle_store(event):
+    """
+    Handle DICOM C-STORE request by saving received DICOM files to the appropriate directories.
+    
+    This function creates a directory structure for each study and saves the received
+    DICOM files according to their type (structure files or other DICOM files).
+    
+    Args:
+        event: The C-STORE event containing the DICOM dataset
+        
+    Returns:
+        int: Status code 0x0000 (Success)
+    """
     logger.info("Handle event detected")
     try:
-        # Create a new accession folder
-        extract_accession = f'UID_{event.dataset.StudyInstanceUID}'
-        logger.info("Receiving {}".format(extract_accession))
-        extract_accession = os.path.join('.', extract_accession)
-        
-        if os.path.isdir(extract_accession) == False:
-            os.makedirs(extract_accession, exist_ok=True)
+        # Create a new accession folder using pathlib
+        accession_dir = Path(f'UID_{event.dataset.StudyInstanceUID}')
+        logger.info(f"Receiving {accession_dir}")
+        accession_dir.mkdir(parents=True, exist_ok=True)
 
-        # get the paths to the DCM and structure files
-        dcm_folder = os.path.join(extract_accession, 'DCM')
-        structure_folder = os.path.join(extract_accession, 'Structure')
-        seg_folder = os.path.join(extract_accession, 'Segmentations')
+        # Define subdirectories for DCM, Structure, Segmentations
+        dcm_folder = accession_dir / 'DCM'
+        structure_folder = accession_dir / 'Structure'
+        seg_folder = accession_dir / 'Segmentations'
 
-        # make the folders
-        folder_list=[ dcm_folder, structure_folder]
-        for folder in folder_list:
-            if os.path.isdir(folder)==False:
-                logger.info("Creating %s" % folder)
-                os.mkdir(folder)
+        # Create subdirectories if they don't exist
+        for folder in (dcm_folder, structure_folder, seg_folder):
+            if not folder.exists():
+                logger.info(f"Creating {folder}")
+                folder.mkdir(exist_ok=True)
 
-        # get most recently created parent folder since it errors out sometimes otherwise
-        all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
-        latest_subdir = max(all_subdirs, key=os.path.getmtime)
-
-        dcm_folder = os.path.join(latest_subdir, 'DCM')
-        structure_folder = os.path.join(latest_subdir, 'Structure')
-        seg_folder = os.path.join(latest_subdir, 'Segmentations')
+        # Use accession_dir for subsequent processing
+        latest_subdir = accession_dir
 
         # write structure file based on header metadata
         if 'Structure' in str(event.file_meta):
 
-            fname = os.path.join(structure_folder, f'{event.request.AffectedSOPInstanceUID}.dcm')
+            # Path for RTSTRUCT file
+            fname = structure_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
 
             with open(fname, 'wb') as f:
 
@@ -136,7 +145,8 @@ def handle_store(event):
         # write all other DCM files if they are not the structure file
         else:
 
-            fname = os.path.join(dcm_folder, f'{event.request.AffectedSOPInstanceUID}.dcm')
+            # Path for other DICOM files
+            fname = dcm_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
 
             with open(fname, 'wb') as f:
 
@@ -152,17 +162,39 @@ def handle_store(event):
         f.close()
 
     except Exception as err:
-        print(err)
+        logger.error(err)
 
     return 0x0000
 
-"""Handle a CONN_CLOSE event"""
 def handle_conn_close(event):
+    """
+    Handle a DICOM connection close event.
+    
+    Args:
+        event: The connection close event
+        
+    Returns:
+        int: Status code 0x0000 (Success)
+    """
     logger.info("Connect close event detected")
     return 0x0000
 
-"""Handle completed sequence storage"""
 def handler(a):
+    """
+    Handle completed sequence storage and process the stored DICOM files.
+    
+    This function serves as the main pipeline controller that:
+    1. Generates unique IDs for the DICOM files
+    2. Creates a random ID for de-identification if needed
+    3. Processes the DICOM files through contour addition and burn-in
+    4. Sends the processed files to the destination PACS
+    
+    Args:
+        a: Path to the accession directory
+        
+    Returns:
+        bool: True if processing completed successfully, False otherwise
+    """
     logger.info("Handler event detected. Starting pipeline")
 
     # Storage Type: Secondary Capture Image Storage
@@ -180,29 +212,32 @@ def handler(a):
     # Create a new random id
     if DEIDENTIFY:
         global RAND_ID
-        letters='abcdfhjklmnopqrstvwxyz'
-        RAND_ID=''.join(random.choice(letters) for x in range(8)).upper()
-        print("RANDOM ID is %s" % RAND_ID)
+        letters = 'abcdfhjklmnopqrstvwxyz'
+        RAND_ID = ''.join(random.choice(letters) for x in range(8)).upper()
+        logger.info(f"Random ID is {RAND_ID}")
     else:
         RAND_ID=""
 
     # get most recently created folder since it errors out sometimes otherwise
     # all_subdirs = [d for d in os.listdir('.') if os.path.isdir(d)]
     # latest_subdir = max(all_subdirs, key=os.path.getmtime)
-    latest_subdir=a
+    # Convert latest_subdir to pathlib.Path
+    latest_subdir = Path(a)
 
-    # define path directories
-    dcm_path = os.path.join(latest_subdir, 'DCM')
-    struct_path = os.path.join(latest_subdir, 'Structure')
-    seg_path = os.path.join(latest_subdir, 'Segmentations')
+    # define path directories using pathlib
+    base_dir = latest_subdir
+    dcm_path = base_dir / 'DCM'
+    struct_path = base_dir / 'Structure'
+    seg_path = base_dir / 'Segmentations'
 
-    if len(os.listdir(struct_path)) == 0:
-        print("Empty directory")
+    # Ensure the Structure directory is not empty
+    if not any(struct_path.iterdir()):
+        logger.error("Empty directory")
         return False
 
-    # Potential Error point: Missing Structure file
-    struct_file = os.listdir(struct_path)[0]
-    struct_path = os.path.join(struct_path, struct_file)
+    # Use the first structure file found
+    struct_file = next(struct_path.iterdir())
+    struct_path = struct_path / struct_file.name
 
     # 02/07/2025 - I am removing JPEG creation again because of alignment issues with the mask!!
     # # Create an instance of ContourExtraction with the path to the DCM files as argument
@@ -212,23 +247,24 @@ def handler(a):
     # print("END: Running Contour Extraction Process")
 
     # create an instance of ContourAddition with the paths to the DCM and structure files as arguments
-    print(f"DEIDENTIFY is set to {DEIDENTIFY}")
+    logger.info(f"De-identify is set to {DEIDENTIFY}")
     if DEIDENTIFY == True:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID, RAND_ID)
     else:
         addition = Contour_Addition.ContourAddition(dcm_path, struct_path, DEIDENTIFY, STUDY_INSTANCE_ID, CT_SOPInstanceUID, FOD_REF_ID)
 
-    addition_path = os.path.join(latest_subdir, 'Addition')
+    # Path to the Addition folder
+    addition_path = base_dir / 'Addition'
 
     # run the main function on each instance
-    print("START: Running Mask Addition Process")
+    logger.info("START: Running Mask Addition Process")
     addition.process()
-    print("END: Running Mask Addition Process")
+    logger.info("END: Running Mask Addition Process")
 
     # Create Segmentations
     if DEIDENTIFY == False:
-        print("START: CREATING SEGMENTATION DICOMS")
-        print(f"struct_path is: {struct_path}")
+        logger.info("START: CREATING SEGMENTATION DICOMS")
+        logger.debug(f"struct_path: {struct_path}")
         segmentation = Segmentations.Segmentations(dcm_path, struct_path, seg_path, DEIDENTIFY, STUDY_INSTANCE_ID)
         segmentation.process()
     
@@ -236,14 +272,14 @@ def handler(a):
     burn_in = Add_Burn_In.Add_Burn_In(addition_path)
     burn_in.apply_watermarks()
     
-    print("START: SENDING Masked DICOMS")
+    logger.info("START: SENDING Masked DICOMS")
     send_files_overlay = Send_Files.SendFiles(addition_path, dest_ip, dest_port, dest_aetitle)
     send_files_overlay.send_dicom_folder()
 
     # The SEG file is created as an overlay on the original image. Thus, only available in deidenfied mode.
     # THIS DOES NOT HAVE "FOR RESEARCH USE ONLY APPENDED"
     if DEIDENTIFY == False:
-        print("START: SENDING DICOM SEG FILE")
+        logger.info("START: SENDING DICOM SEG FILE")
         send_files_segmentations = Send_Files.SendFiles(seg_path, dest_ip, dest_port, dest_aetitle)
         send_files_segmentations.send_dicom_folder()
 
@@ -253,7 +289,7 @@ def handler(a):
     #     send_files_struct = Send_Files.SendFiles(os.path.join(latest_subdir, 'Structure'), dest_ip, dest_port, dest_aetitle)
     #     send_files_struct.send_dicom_folder()
 
-    print("END: Completing pipeline")
+    logger.info("END: Completing pipeline")
     return True
 
 handlers = [
@@ -273,18 +309,29 @@ def create_new_application_entity():
 
 def int_handler(signum, frame):
     logger.info("Server stopped by interrupt.")
-    print("\n ---- Stopping Server ----")
+    logger.info("---- Stopping Server ----")
     
     sys.exit(0)
 
 # return a list of directories that match the Accession Pattern
-def find_accession_directories(my_dir:str):
-    Accession_directories = [os.path.join(d,'DCM') for d in os.listdir(my_dir) if d.startswith('UID_')]
-    return(Accession_directories)
+def find_accession_directories(my_dir: str):
+    """
+    Find accession directories under my_dir; each directory starting with 'UID_'
+    and return the path to its 'DCM' subdirectory.
+    """
+    base_dir = Path(my_dir)
+    accession_dirs = []
+    for d in base_dir.iterdir():
+        if d.is_dir() and d.name.startswith('UID_'):
+            accession_dirs.append(d / 'DCM')
+    return accession_dirs
 
 def fileInDirectory(my_dir: str):
-    onlyfiles = [f for f in os.listdir(my_dir) if os.path.isfile(os.path.join(my_dir, f))]
-    return(onlyfiles)
+    """
+    Return list of files (names) in the given directory.
+    """
+    dir_path = Path(my_dir)
+    return [p.name for p in dir_path.iterdir() if p.is_file()]
 
 # function comparing two lists
 def listComparison(OriginalList: list, NewList: list):
@@ -292,8 +339,18 @@ def listComparison(OriginalList: list, NewList: list):
     return(differencesList)
 
 def fileWatcher(watchDirectory: str, pollTime: int):
+    """
+    Watches a directory for new files and monitors download progress.
+    
+    Args:
+        watchDirectory (str): Path to directory to monitor
+        pollTime (int): Time in seconds between polls
+        
+    Returns:
+        bool: True when download is complete
+    """
     while True:
-        if 'watching' not in locals(): 
+        if 'watching' not in locals():
             previousFileList = fileInDirectory(watchDirectory)
             watching = 1
         
@@ -302,33 +359,35 @@ def fileWatcher(watchDirectory: str, pollTime: int):
         fileDiff = listComparison(previousFileList, newFileList)
         previousFileList = newFileList
 
-        if watching == 1 & len(fileDiff) > 0:
-            print("Downloading... {}".format(len(newFileList)), end="\r")
+        if watching == 1 and len(fileDiff) > 0:
+            logger.info(f"Downloading... {len(newFileList)}")
 
         if len(fileDiff) == 0:
-            print("Download Complete")
+            logger.info("Download complete")
             return True
 
 def fileWatcherService(pd,currently_processing):
     if pd not in currently_processing:
         # Start the watcher
-        print(" - Now watching: {}".format(pd))
+        logger.info(f"Now watching: {pd}")
         currently_processing.append(pd)
         result=fileWatcher(pd, 3)
         if result:
-            print(" > Dicom Directory: %s" % pd)
-            abs_pd=os.path.join(os.getcwd(), os.path.dirname(pd))
+            logger.info(f"Dicom Directory: {pd}")
+            # Determine absolute accession directory path
+            abs_pd = Path(pd).parent.resolve()
+            # Execute handler on the accession directory
             if handler(abs_pd):
-                print(" > Removing full Accession directory")
+                logger.info(f"Removing full Accession directory: {abs_pd}")
                 shutil.rmtree(abs_pd)
                 currently_processing.remove(pd)
                 return True
             else:
-                print(" X: DEBUG error. unable to complete handler()")
+                logger.error("Unable to complete handler()")
                 logger.error("Unable to complete handler()")
                 return False
     else:
-        print("{} is currently processing".format(pd))
+        logger.info(f"{pd} is currently processing")
         return False
 
 def main():
@@ -341,7 +400,7 @@ def main():
     signal.signal(signal.SIGINT, int_handler)
 
     # Start the server in a blocking way
-    print(" ---- Starting Server -----")
+    logger.info("---- Starting Server -----")
     service = ae.start_server(
         (local_ip, local_port), 
         evt_handlers=handlers, 
@@ -358,24 +417,25 @@ def main():
         if len(processing_dirs) > 0:
             for pd in processing_dirs:
                 if pd not in currently_processing:
-                    print("\n > New directory found: %s" % pd)
-                    acc=os.path.dirname(pd)
+                    logger.info(f"New directory found: {pd}")
+                    # Determine accession directory from DCM path
+                    acc = Path(pd).parent
                     threads[acc] = threading.Thread(target=fileWatcherService,
                         args=(pd,currently_processing))
                     time.sleep(2)
                     threads[acc].start()
-                    print("\n --- Thread started ---")
+                    logger.info("Thread started")
 
         time.sleep(1)
         for t in list(threads.keys()):
             if threads[t].is_alive() == False:
                 del threads[t]
 
-        print("Currently Processing {}".format(list(threads)), end="\r")
+        logger.info(f"Currently Processing {list(threads)}")
 
-print("\n",message)
-print(""" - OPEN TO RECEIVE ON > {} IP: {}:{}""".format(local_aetitle,local_ip, local_port))
-print(""" - FORWARDING TO > {} IP: {}:{}""".format(dest_aetitle, dest_ip, dest_port))
+logger.info(message)
+logger.info(f"OPEN TO RECEIVE ON > {local_aetitle} IP: {local_ip}:{local_port}")
+logger.info(f"FORWARDING TO > {dest_aetitle} IP: {dest_ip}:{dest_port}")
 
 # Let's run the main function 
 if __name__ == "__main__":

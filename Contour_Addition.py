@@ -1,5 +1,5 @@
 # Load necessary libraries
-import os
+from pathlib import Path
 import numpy as np
 import pydicom
 from rt_utils import RTStructBuilder
@@ -8,6 +8,81 @@ from pydicom.pixels import pack_bits
 import datetime
 import re
 from DicomAnonymizer import DicomAnonymizer
+
+def _add_overlay_layers(self, ds, mask_dict, match, series_instance_uid, output_directory):
+    slice_number = int(match) - 1
+    slice_str = str(slice_number)
+
+    if len(slice_str) < 5:
+        slice_str = '0' * (5 - len(slice_str)) + slice_str
+
+    hex_start = 0x6000
+    MediaSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+
+    for mask in mask_dict.keys():
+        mask_array = mask_dict[mask]
+        mask_slice = mask_array[:, :, slice_number]
+        mask_slice = np.ma.masked_where(mask_slice == 0, mask_slice)
+        packed_bytes = pack_bits(mask_slice)
+
+        ds.SOPClassUID = MediaSOPClassUID
+        ds.file_meta.MediaSOPInstanceUID = pydicom.uid.generate_uid(prefix=MediaSOPClassUID + '.')
+        ds.SOPInstanceUID = ds.file_meta.MediaSOPInstanceUID
+
+        ds.StudyDescription = "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
+        ds.SeriesDescription = "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
+
+        ds.SeriesInstanceUID = series_instance_uid
+        ds.SeriesNumber = 98
+
+        ds.Modality = 'CT'
+        ds.ContentDate = str(datetime.date.today()).replace('-', '')
+        ds.AcquisitionDate = str(datetime.date.today()).replace('-', '')
+        ds.SeriesDate = str(datetime.date.today()).replace('-', '')
+        ds.StudyDate = str(datetime.date.today()).replace('-', '')
+
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0040), 'CS', 'R')
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0050), 'SS', [1, 1])
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0100), 'US', 8)
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0102), 'US', 0)
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x022), 'LO', mask)
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x1500), 'LO', mask)
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x3000), 'OW', packed_bytes)
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
+        ds.add_new(pydicom.tag.Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
+
+        ds.StudyID = "RTPlanShare"
+
+        dt = datetime.time(0, 1, 1, 10)
+        ds.StudyTime = dt.strftime('%H%M%S.%f')
+        dt = datetime.time(0, 1, 3, 30)
+        ds.SeriesTime = dt.strftime('%H%M%S.%f')
+        dt = datetime.time(0, 1, 7, 30)
+        ds.ContentTime = dt.strftime('%H%M%S.%f')
+        dt = datetime.time(0, 1, 9, 30)
+        ds.AcquisitionTime = dt.strftime('%H%M%S.%f')
+
+        for tag in [(0x0040, 0x0275), (0x0010, 0x1000), (0x0008, 0x0012)]:
+            if tag in ds:
+                try:
+                    del ds[tag]
+                except Exception:
+                    pass
+
+        if self.deidentify:
+            anonymized_dcm = self.anonymizer.anonymize(ds)
+            anonymized_dcm.PatientID = f"RT_{self.RAND_ID}".upper()
+            anonymized_dcm.PatientName = f"RT_{self.RAND_ID}".upper()
+
+        hex_start += 2
+        out_fn = output_directory / f"CT-with-overlay-{slice_str}.dcm"
+
+        if self.deidentify:
+            anonymized_dcm.save_as(out_fn)
+            return anonymized_dcm
+        else:
+            ds.save_as(out_fn)
+            return ds
 
 class ContourAddition:
 
@@ -35,28 +110,24 @@ class ContourAddition:
             rt_struct_path=self.struct_path
         )
 
-        # Provide a list of structures
-        structures = RTstruct.get_roi_names()
+        # Provide a list of structures and filter out known problematic ones
+        orig_structures = RTstruct.get_roi_names()
+        structures = [s for s in orig_structures if s != '*Skull']
 
-        # Remove known problematic ROIs
-        if '*Skull' in structures:
-            structures.remove()
-
-        # Evaluate ROIs
+        # Evaluate ROIs without mutating the list during iteration
+        valid_structures = []
         print("  - Evaluating Segmentations")
         for struct in structures:
             try:
                 dummy = RTstruct.get_roi_mask_by_name(struct)
             except Exception:
-                print("WARNING: %s is an unreadable ROI." % struct)
-                structures.remove(struct)
+                print(f"WARNING: {struct} is an unreadable ROI.")
                 continue
-            t=np.where(dummy > 0, 1, 0)
-            print(" >>> Structure: {} is sized at {}".format(
-                struct,
-                (dummy > 0 ).sum()
-            ))
+            mask_count = (dummy > 0).sum()
+            print(f" >>> Structure: {struct} is sized at {mask_count}")
+            valid_structures.append(struct)
 
+        structures = valid_structures
         print("  - These structures exist in RT:\n", structures)
 
         # Build Struct masks
@@ -82,14 +153,14 @@ class ContourAddition:
             # flip the mask
             mask_dict[struct] = np.flip(mask_dict[struct], axis=2)
             
-        # get a list of all structural files
-        files = os.listdir(self.dcm_path)
+        # get a list of all structural files using pathlib
+        dcm_dir = Path(self.dcm_path)
+        files = [p for p in dcm_dir.iterdir() if p.is_file()]
 
         # Create Overlay layer function
-        output_directory = os.path.abspath(self.dcm_path).replace('DCM', 'Addition')
-
-        if os.path.isdir(output_directory) == False:
-            os.mkdir(output_directory)
+        # Build output directory path by replacing 'DCM' with 'Addition' in folder name
+        output_directory = dcm_dir.with_name(dcm_dir.name.replace('DCM', 'Addition'))
+        output_directory.mkdir(exist_ok=True)
 
         def add_overlay_layers(ds, mask_dict, match):
             slice_number = int(match) - 1
@@ -189,7 +260,7 @@ class ContourAddition:
                     # ds.PatientSex= 'O' # delete Gender
 
                 hex_start = hex_start + 2
-                out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
+                out_fn = output_directory / f"CT-with-overlay-{slice_str}.dcm"
 
                 #print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
                 if self.deidentify == True:
@@ -214,7 +285,8 @@ class ContourAddition:
         headers = []
         
         for f in files:
-            ds = pydicom.dcmread(os.path.join(self.dcm_path, f))
+            # f is a pathlib.Path to a DICOM file
+            ds = pydicom.dcmread(f)
             headers.append((ds[0x0020, 0x0013].value, f))
     
             # sort by header information (image number) and return a list of filenames sorted accordingly 
@@ -223,10 +295,9 @@ class ContourAddition:
         counter = 0
 
         for f in files:
-        
-            counter = counter + 1
-
-            fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
+            counter += 1
+            # f is a pathlib.Path to a DICOM file
+            fds = pydicom.dcmread(f)
             number = f.split('.')[-2]
             
             if int(number) > 300:
@@ -237,7 +308,7 @@ class ContourAddition:
                 # Add the overlay layer
                 # fds = add_overlay_layers(fds, mask_dict, number)
                 slices.append(fds)
-                fds = add_overlay_layers(fds, mask_dict, counter)
+                fds = _add_overlay_layers(self, fds, mask_dict, counter, SeriesInstanceUID, output_directory)
             else:
                 skipcount = skipcount + 1
 

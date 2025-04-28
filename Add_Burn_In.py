@@ -1,40 +1,72 @@
-import os
+from pathlib import Path
 import pydicom
 import numpy as np
 import cv2
+import logging
+
+logger = logging.getLogger('NETRT')
 import copy
 
 
 class Add_Burn_In:
+    """
+    Class for adding watermarks to DICOM images.
+    
+    This class processes DICOM images by adding a "RESEARCH IMAGE" watermark
+    to indicate that they are not for diagnostic purposes.
+    """
+    
     def __init__(self, directory):
+        """
+        Initialize the Add_Burn_In processor.
+        
+        Args:
+            directory (str or Path): Path to the directory containing DICOM files
+        """
         self.directory = directory
         self.dicom_filepaths = self.get_dicom_filepaths()
 
     def get_dicom_filepaths(self):
+        """
+        Recursively find all DICOM files (*.dcm) under the directory,
+        excluding any files in a 'Structure' subdirectory.
+        
+        Returns:
+            list: List of Path objects pointing to DICOM files
+        """
         dicom_filepaths = []
-
-        for root, dirs, files in os.walk(self.directory):
-            if "Structure" in dirs:
-                dirs.remove("Structure")  # exclude the "structure" subfolder
-
-            for file in files:
-                if file.endswith(".dcm"):
-                    filepath = os.path.join(root, file)
-                    try:
-                        pydicom.dcmread(filepath)  # check if it's a valid DICOM file
-                        dicom_filepaths.append(filepath)
-                    except pydicom.errors.InvalidDicomError:
-                        pass  # ignore non-DICOM files
-
+        base_dir = Path(self.directory)
+        for p in base_dir.rglob('*.dcm'):
+            # Skip files in 'Structure' folder
+            if 'Structure' in p.parts:
+                continue
+            try:
+                # Verify valid DICOM
+                pydicom.dcmread(str(p))
+                dicom_filepaths.append(p)
+            except pydicom.errors.InvalidDicomError:
+                continue
         return dicom_filepaths
 
     def apply_watermark(self, input_filename):
+        """
+        Add a watermark to a single DICOM image.
+        
+        This method adds a "RESEARCH IMAGE" watermark to the DICOM image,
+        which indicates that the image is not for diagnostic purposes.
+        
+        Args:
+            input_filename (str or Path): Path to the DICOM file
+            
+        Returns:
+            None
+        """
         # Load the DICOM image
         dcm = pydicom.dcmread(input_filename, force=True)
     
         # Check if the DICOM file contains pixel data
         if dcm.get("PixelData") is None:
-            print(f"WARNING: File {input_filename} does not contain valid pixel data. Skipping...")
+            logger.warning(f"File {input_filename} does not contain valid pixel data. Skipping...")
             return
     
         # Convert the DICOM image to a numpy array
@@ -94,5 +126,14 @@ class Add_Burn_In:
         pydicom.dcmwrite(input_filename, new_dcm, enforce_file_format=True)
         
     def apply_watermarks(self):
+        """
+        Apply watermarks to all DICOM files in the directory.
+        
+        This method applies the "RESEARCH IMAGE" watermark to all DICOM files
+        found in the directory specified during initialization.
+        
+        Returns:
+            None
+        """
         for dicom_file in self.dicom_filepaths:
             self.apply_watermark(dicom_file)

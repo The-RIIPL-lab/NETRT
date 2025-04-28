@@ -1,12 +1,17 @@
-import os
+from pathlib import Path
 import numpy as np
 import pydicom
 from rt_utils import RTStructBuilder
 import matplotlib.pyplot as plt
 import re
 from scipy.ndimage.measurements import center_of_mass
+from logger_module import setup_logger
 
+# Configure plotting backend
 plt.switch_backend('agg')
+
+# Get logger
+logger = setup_logger()
 
 def apply_modality_lut(pixel_array, ds):
     """
@@ -27,21 +32,77 @@ def apply_modality_lut(pixel_array, ds):
     return pixel_array * rescale_slope + rescale_intercept
 
 class ContourExtraction:
+    """
+    Class for extracting contours from RT structure sets and creating visualization images.
+    
+    This class processes DICOM CT/MR images and associated RT structure sets to create
+    visualization images with contour overlays.
+    """
+    
     def __init__(self, dcm_path, struct_path):
+        """
+        Initialize the ContourExtraction with paths to DICOM images and RT structure set.
+        
+        Args:
+            dcm_path (str or Path): Path to the directory containing DICOM image files
+            struct_path (str or Path): Path to the RT structure set file
+        """
         self.dcm_path = dcm_path
         self.struct_path = struct_path
+    
+    def _save_slice_as_jpeg(self, slice_index, anat_array, mask_dict, output_directory):
+        """
+        Save a single slice with contour overlays as a JPEG image.
+        
+        Args:
+            slice_index (int): Index of the slice to save
+            anat_array (numpy.ndarray): 3D array of anatomical image data
+            mask_dict (dict): Dictionary mapping structure names to mask arrays
+            output_directory (Path): Directory to save the output JPEG image
+            
+        Returns:
+            None
+        """
+        slice_str = f"{slice_index:05d}"
+        plt.figure(figsize=(10, 10))
+        plt.axis('off')
+        plt.imshow(anat_array[:, :, slice_index], cmap=plt.cm.gray)
+        for mask_name, mask in mask_dict.items():
+            mask_slice = np.ma.masked_where(mask[:, :, slice_index] == 0, mask[:, :, slice_index])
+            center = center_of_mass(np.where(mask_slice > 0, 1, 0))
+            if not any(np.isnan(center)):
+                txt = plt.text(center[1], center[0], mask_name)
+                txt.set_color("white")
+            plt.imshow(mask_slice, alpha=0.6, cmap=plt.cm.prism)
+        output_path = output_directory / f"{slice_str}.jpeg"
+        try:
+            plt.savefig(output_path, bbox_inches='tight', pad_inches=0)
+            logger.info(f"Created JPEG image {output_path}")
+        except Exception as e:
+            logger.error(f"Unable to create image {output_path}. Error: {e}")
+        plt.close()
 
     def process(self):
+        """
+        Process the DICOM files and RT structure set to generate visualization images.
+        
+        This method:
+        1. Loads the DICOM files and RT structure set
+        2. Extracts contours for each ROI in the structure set
+        3. Creates a 3D volume from the DICOM slices
+        4. Generates JPEG images for each slice with contour overlays
+        
+        Returns:
+            None
+        """
         # Load dicom files and RTStruct
         rtstruct = RTStructBuilder.create_from(
             dicom_series_path=self.dcm_path,
             rt_struct_path=self.struct_path
         )
 
-        structures = rtstruct.get_roi_names()
-        
-        if '*Skull' in structures:
-            structures.remove('*Skull')
+        # Load ROI names and exclude known problematic structures
+        structures = [s for s in rtstruct.get_roi_names() if s != '*Skull']
 
         # Evaluate ROIs and remove unreadable ones
         readable_structures = []
@@ -49,29 +110,33 @@ class ContourExtraction:
             try:
                 roi_mask = rtstruct.get_roi_mask_by_name(struct)
                 non_zero_pixels = (roi_mask > 0).sum()
-                print(f"Structure: {struct} is sized at {non_zero_pixels}")
+                logger.info(f"Structure: {struct} is sized at {non_zero_pixels}")
                 readable_structures.append((struct, roi_mask))
             except Exception as e:
-                print(f"WARNING: {struct} is an unreadable ROI. Error: {e}")
+                logger.warning(f"{struct} is an unreadable ROI. Error: {e}")
 
-        # Get sorted list of DICOM files
-        files = [f for f in os.listdir(self.dcm_path) if f.endswith('.dcm')]
-        files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
+        # Get sorted list of DICOM files using pathlib
+        dcm_dir = Path(self.dcm_path)
+        files = sorted(
+            [p for p in dcm_dir.iterdir() if p.suffix.lower() == '.dcm'],
+            key=lambda p: int(re.findall(r'\d+', p.name)[-1])
+        )
 
-        print(f"Total files: {len(files)}")
+        logger.info(f"Total files: {len(files)}")
 
         # Filter out slices without SliceLocation
         slices = []
         skip_count = 0
 
         for f in files:
-            ds = pydicom.dcmread(os.path.join(self.dcm_path, f))
+            # f is a pathlib.Path to a DICOM file
+            ds = pydicom.dcmread(f)
             if hasattr(ds, 'SliceLocation'):
                 slices.append(ds)
             else:
                 skip_count += 1
 
-        print(f"Skipped files without SliceLocation: {skip_count}")
+        logger.info(f"Skipped files without SliceLocation: {skip_count}")
 
         # Get pixel spacing and slice thickness
         ps = slices[0].PixelSpacing
@@ -94,35 +159,10 @@ class ContourExtraction:
             mask_dict[struct] = np.where(roi_mask > 0, value_increment, 0)
             value_increment += 100
 
-        output_directory = self.dcm_path.replace('DCM', 'Extraction')
-        if not os.path.isdir(output_directory):
-            os.mkdir(output_directory)
+        # Build output directory path by replacing 'DCM' with 'Extraction'
+        output_directory = Path(self.dcm_path).with_name(Path(self.dcm_path).name.replace('DCM', 'Extraction'))
+        output_directory.mkdir(exist_ok=True)
 
         # Create JPEG images
         for x in range(anat_array.shape[2]):
-            slice_str = f"{x:05d}"
-
-            plt.figure(figsize=(10, 10))
-            plt.axis('off')
-
-            plt.imshow(anat_array[:, :, x], cmap=plt.cm.gray)
-
-            mask_image_dict = {}
-            for mask_name, mask in mask_dict.items():
-                mask_slice = np.ma.masked_where(mask[:, :, x] == 0, mask[:, :, x])
-                
-                center_of_mask = center_of_mass(np.where(mask_slice > 0, 1, 0))
-                if not any(np.isnan(center_of_mask)):
-                    txt = plt.text(center_of_mask[1], center_of_mask[0], mask_name)
-                    txt.set_color("white")
-
-                plt.imshow(mask_slice, alpha=0.6, cmap=plt.cm.prism)
-
-            output_path = os.path.join(output_directory, f"{slice_str}.jpeg")
-            try:
-                plt.savefig(output_path, bbox_inches='tight', pad_inches=0)
-                print(f"Created JPEG image {output_path}")
-            except Exception as e:
-                print(f"Unable to create image {output_path}. Error: {e}")
-
-            plt.close()
+            self._save_slice_as_jpeg(x, anat_array, mask_dict, output_directory)

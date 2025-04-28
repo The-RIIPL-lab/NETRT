@@ -1,5 +1,4 @@
 from pathlib import Path
-import os
 import numpy as np
 from rt_utils import RTStructBuilder
 from math import isnan
@@ -7,10 +6,32 @@ import highdicom as hd
 from pydicom.sr.codedict import codes
 from pydicom.filereader import dcmread
 from DicomAnonymizer import DicomAnonymizer
+from logger_module import setup_logger
+
+# Get logger
+logger = setup_logger()
 
 class Segmentations:
+    """
+    Class for creating DICOM-SEG files from RT structure sets.
+    
+    This class processes DICOM RT structure sets to create DICOM segmentation objects
+    that can be displayed in standard DICOM viewers.
+    """
 
     def __init__(self, dcm_path, struct_path, seg_path, deidentify, STUDY_INSTANCE_ID='', RAND_ID='', debug=False):
+        """
+        Initialize the Segmentations processor.
+        
+        Args:
+            dcm_path (str or Path): Path to the directory containing DICOM image files
+            struct_path (str or Path): Path to the RT structure set file
+            seg_path (str or Path): Path to save the output segmentation files
+            deidentify (bool): Whether to anonymize the output segmentation files
+            STUDY_INSTANCE_ID (str, optional): Study instance UID to use if deidentifying
+            RAND_ID (str, optional): Random ID to use for anonymization
+            debug (bool, optional): Enable debug mode
+        """
         self.dcm_path = dcm_path
         self.struct_path = struct_path
         self.seg_path = seg_path
@@ -19,40 +40,47 @@ class Segmentations:
         self.StudyInstanceUID=STUDY_INSTANCE_ID
 
         if deidentify == True:
-            print("Starting Anonymizer")
+            logger.info("Starting Anonymizer")
             self.anonymizer = DicomAnonymizer()
     
     def process(self):
-
+        """
+        Process the RT structure set to create DICOM-SEG files.
+        
+        This method:
+        1. Loads the RT structure set
+        2. Extracts structures from the RT structure set
+        3. Creates a binary mask for each structure
+        4. Creates a DICOM-SEG file for each structure
+        
+        Returns:
+            None
+        """
         # Load dicom struct files
         RTstruct= RTStructBuilder.create_from(
             dicom_series_path=self.dcm_path,
             rt_struct_path=self.struct_path
         )
 
-        # Provide a list of structures
-        structures = RTstruct.get_roi_names()
+        # Provide a filtered list of structures (exclude known problematic ones)
+        orig_structures = RTstruct.get_roi_names()
+        structures = [s for s in orig_structures if s != '*Skull']
 
-        # Remove known problematic ROIs
-        if '*Skull' in structures:
-            structures.remove()
-
-        # Evaluate ROIs
-        print(" - Evaluating Segmentations")
+        # Evaluate segmentations without mutating the list during iteration
+        valid_structures = []
+        logger.info("Evaluating Segmentations")
         for struct in structures:
             try:
                 dummy = RTstruct.get_roi_mask_by_name(struct)
             except Exception:
-                print("WARNING: %s is an unreadable ROI." % struct)
-                structures.remove(struct)
+                logger.warning(f"{struct} is an unreadable ROI.")
                 continue
-            t=np.where(dummy > 0, 1, 0)
-            print(" >>> Structure: {} is sized at {}".format(
-                struct,
-                (dummy > 0 ).sum()
-            ))
+            count = (dummy > 0).sum()
+            logger.info(f"Structure: {struct} is sized at {count}")
+            valid_structures.append(struct)
 
-        print("  - These structures exist in RT:\n", structures)
+        structures = valid_structures
+        logger.info(f"These structures exist in RT: {structures}")
 
         # Build Struct masks
         mask_dict = {}
@@ -64,11 +92,11 @@ class Segmentations:
                 mask_3d = RTstruct.get_roi_mask_by_name(struct)
 
             except KeyError:
-                print("ERROR: unable to locate mask: %s" % struct)
+                logger.error(f"Unable to locate mask: {struct}")
                 continue
 
             except Exception as err:
-                print("OTHER ERROR: {}".format(err))
+                logger.error(f"Error processing structure {struct}: {err}")
                 continue
 
             # Assign mask value for each different mask
@@ -77,18 +105,28 @@ class Segmentations:
             # flip the mask
             mask_dict[struct] = np.flip(mask_dict[struct],axis=2)
             
-        # check segmentation folder
-        if os.path.isdir(self.seg_path) == False:
-            os.mkdir(self.seg_path)
+        # check/create segmentation folder using pathlib
+        seg_dir = Path(self.seg_path)
+        seg_dir.mkdir(exist_ok=True)
         
-        for struct in mask_dict.keys():
-            mask_array=mask_dict[struct]
-            out_file = os.path.join(self.seg_path, struct + ".dcm")
+        for struct, mask_array in mask_dict.items():
+            out_file = seg_dir / f"{struct}.dcm"
             self.create_segmentation_dcm(self.dcm_path, mask_array, struct, out_file)
 
 
     def create_segmentation_dcm(self, reference_dicom, mask_array, struct_name, out_file):
+        """
+        Create a DICOM-SEG file from a binary mask.
         
+        Args:
+            reference_dicom (str or Path): Path to the directory containing reference DICOM files
+            mask_array (numpy.ndarray): 3D binary mask representing the structure
+            struct_name (str): Name of the structure
+            out_file (str or Path): Path to save the output DICOM-SEG file
+            
+        Returns:
+            None
+        """
         dcm_path=Path(reference_dicom)
         unsorted_image_files = dcm_path.glob('*.dcm')
         

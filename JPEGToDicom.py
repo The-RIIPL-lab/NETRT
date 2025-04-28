@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from io import BytesIO
 from PIL import Image
 import pydicom
@@ -6,6 +6,12 @@ import re
 import numpy as np
 import datetime
 import tempfile
+ 
+# Private helper to ensure even length for DICOM encapsulated pixel data
+def _ensure_even(stream):
+    if len(stream) % 2:
+        return stream + b"\x00"
+    return stream
 
 class JPEGToDICOM_Class:
 
@@ -21,22 +27,23 @@ class JPEGToDICOM_Class:
 
     def process(self):
 
-        # Create a list of sorted JPEG files
-        jpeg_files = os.listdir(self.extraction_path)
-        jpeg_files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
+        # Create a sorted list of JPEG files using pathlib
+        jpeg_dir = Path(self.extraction_path)
+        jpeg_files = sorted(
+            [p for p in jpeg_dir.iterdir() if p.suffix.lower() in ['.jpeg', '.jpg']],
+            key=lambda p: int(re.findall(r'\d+', p.name)[-1])
+        )
         
-        # Create a sorted list of DICOM files
-        dcm_sorted = os.listdir(self.dcm_path)
-        dcm_sorted.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
+        # Create a sorted list of DICOM files using pathlib
+        dcm_dir = Path(self.dcm_path)
+        dcm_sorted = sorted(
+            [p for p in dcm_dir.iterdir() if p.suffix.lower() == '.dcm'],
+            key=lambda p: int(re.findall(r'\d+', p.name)[-1])
+        )
 
         print("Number of JPEG files %i" % len(jpeg_files))
         print("Number of DICOM files %i" % len(dcm_sorted))
 
-        def ensure_even(stream):
-            # Very important for some viewers
-            if len(stream) % 2:
-                return stream + b"\x00"
-            return stream
 
         ''' # Dev notes
         I think we want to iterate through all of the images in order
@@ -71,7 +78,8 @@ class JPEGToDICOM_Class:
         # Iteratively rotate through the JPEG images
 
         # Define the image array
-        jpeg_sample = Image.open(os.path.join(self.extraction_path,jpeg_files[0]))
+        # Open a sample JPEG to determine array properties
+        jpeg_sample = Image.open(jpeg_files[0])
         jpeg_sample.load()
         jpeg_sample = np.asarray(jpeg_sample, dtype="int8")
         print("Sample Array Size %s" % str(jpeg_sample.shape))
@@ -87,11 +95,11 @@ class JPEGToDICOM_Class:
                 ('0' * (5 - len(i)) + i)
             )
 
-            jpeg_file = os.path.join(self.extraction_path, jpeg_file)
+            # jpeg_file is a pathlib.Path
 
             # Hopefully, identify the source DICOM image for the JPEG file
+            # reference_dicom is a pathlib.Path
             reference_dicom = dcm_sorted[instance_number]
-            reference_dicom = os.path.join(self.dcm_path, reference_dicom)
 
             ds = pydicom.dcmread(reference_dicom)
             
@@ -125,7 +133,7 @@ class JPEGToDICOM_Class:
 
             output = BytesIO()
             img.save(output, format="JPEG")
-            new_ds.PixelData = pydicom.encaps.encapsulate([ensure_even(output.getvalue())])
+            new_ds.PixelData = pydicom.encaps.encapsulate([_ensure_even(output.getvalue())])
             output.close()
             new_ds['PixelData'].is_undefined_length = True 
 
