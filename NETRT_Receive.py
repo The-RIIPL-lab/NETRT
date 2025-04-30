@@ -7,7 +7,7 @@ import threading
 import random
 import shutil
 import pydicom
-from pydicom.filewriter import write_file_meta_info
+from pydicom.filewriter import dcmwrite
 from pynetdicom.sop_class import Verification
 import Contour_Addition
 import Send_Files
@@ -28,12 +28,12 @@ logger.info('Start server')
 
 # About this server
 parser = argparse.ArgumentParser(description=message)
-parser.add_argument('-p', type=int, default=11112)
+parser.add_argument('-p', type=int, default=11119)
 parser.add_argument('-i', default="127.0.0.1")
 parser.add_argument('-aet', help='AE title of this server', default='RIIPLRT')
 
 # About the destination server
-parser.add_argument('-dp', type=int, default=11112)
+parser.add_argument('-dp', type=int, default=4242)
 parser.add_argument('-dip', default="152.11.105.71")
 parser.add_argument('-daet', help='AE title of this server', default='RADIORIIPL')
 
@@ -96,74 +96,45 @@ def handle_store(event):
     Handle DICOM C-STORE request by saving received DICOM files to the appropriate directories.
     
     This function creates a directory structure for each study and saves the received
-    DICOM files according to their type (structure files or other DICOM files).
-    
-    Args:
-        event: The C-STORE event containing the DICOM dataset
-        
-    Returns:
-        int: Status code 0x0000 (Success)
+    DICOM files according to their type (RTSTRUCT vs other images). It uses pydicom’s
+    save_as() to avoid the is_little_endian warning and speed up writes.
     """
-    logger.info("Handle event detected")
+    logger.info("C-STORE request: SOP Class %s / SOP Instance %s",
+                event.dataset.SOPClassUID,
+                event.dataset.SOPInstanceUID)
     try:
-        # Create a new accession folder using pathlib
-        accession_dir = Path(f'UID_{event.dataset.StudyInstanceUID}')
-        logger.info(f"Receiving {accession_dir}")
-        accession_dir.mkdir(parents=True, exist_ok=True)
+        # Build base study folder
+        study_uid = event.dataset.StudyInstanceUID
+        base_dir       = Path(f"UID_{study_uid}")
+        dcm_folder     = base_dir / "DCM"
+        struct_folder  = base_dir / "Structure"
+        seg_folder     = base_dir / "Segmentations"
+        for folder in (dcm_folder, struct_folder, seg_folder):
+            folder.mkdir(parents=True, exist_ok=True)
 
-        # Define subdirectories for DCM, Structure, Segmentations
-        dcm_folder = accession_dir / 'DCM'
-        structure_folder = accession_dir / 'Structure'
-        seg_folder = accession_dir / 'Segmentations'
-
-        # Create subdirectories if they don't exist
-        for folder in (dcm_folder, structure_folder, seg_folder):
-            if not folder.exists():
-                logger.info(f"Creating {folder}")
-                folder.mkdir(exist_ok=True)
-
-        # Use accession_dir for subsequent processing
-        latest_subdir = accession_dir
-
-        # write structure file based on header metadata
-        if 'Structure' in str(event.file_meta):
-
-            # Path for RTSTRUCT file
-            fname = structure_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
-
-            with open(fname, 'wb') as f:
-
-                # Write the preamble, prefix and file meta information elements
-                f.write(b'\x00' * 128)
-                f.write(b'DICM')
-
-                write_file_meta_info(f, event.file_meta, enforce_standard=True)
-
-                # Write the raw encoded dataset
-                f.write(event.request.DataSet.getvalue())
-
-        # write all other DCM files if they are not the structure file
+        # Choose output folder based on SOP Class
+        if event.file_meta.MediaStorageSOPClassUID.name == "RT Structure Set Storage":
+            out_file = struct_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
         else:
+            out_file = dcm_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
 
-            # Path for other DICOM files
-            fname = dcm_folder / f"{event.request.AffectedSOPInstanceUID}.dcm"
+        # Prepare dataset for saving
+        ds = event.dataset
+        ds.file_meta = event.file_meta
+        ds.save_as(out_file, 
+                   implicit_vr=event.context.transfer_syntax.is_implicit_VR,
+                   little_endian=event.context.transfer_syntax.is_little_endian
+                )
 
-            with open(fname, 'wb') as f:
+        # Keep track of the latest study directory for release handling
+        global _last_study_dir
+        _last_study_dir = base_dir
 
-                # Write the preamble, prefix and file meta information elements
-                f.write(b'\x00' * 128)
-                f.write(b'DICM')
-
-                write_file_meta_info(f, event.file_meta)
-
-                # Write the raw encoded dataset
-                f.write(event.request.DataSet.getvalue())
-
-        f.close()
-
+        logger.info("Stored to %s", out_file)
     except Exception as err:
-        logger.error(err)
+        logger.error("Failed to store DICOM: %s", err)
 
+    # Return Success status
     return 0x0000
 
 def handle_conn_close(event):
@@ -228,7 +199,9 @@ def handler(a):
     base_dir = latest_subdir
     dcm_path = base_dir / 'DCM'
     struct_path = base_dir / 'Structure'
-    seg_path = base_dir / 'Segmentations'
+    seg_path = base_dir / 'Segmentations' 
+
+    print(struct_path)
 
     # Ensure the Structure directory is not empty
     if not any(struct_path.iterdir()):
@@ -379,11 +352,10 @@ def fileWatcherService(pd,currently_processing):
             # Execute handler on the accession directory
             if handler(abs_pd):
                 logger.info(f"Removing full Accession directory: {abs_pd}")
-                shutil.rmtree(abs_pd)
+                #shutil.rmtree(abs_pd)
                 currently_processing.remove(pd)
                 return True
             else:
-                logger.error("Unable to complete handler()")
                 logger.error("Unable to complete handler()")
                 return False
     else:
@@ -391,8 +363,7 @@ def fileWatcherService(pd,currently_processing):
         return False
 
 def main():
-
-    # Create ae 
+    # Create ae
     ae = create_new_application_entity()
     logger.info("Creating application entity")
 
@@ -411,7 +382,6 @@ def main():
     currently_processing=[]
     threads={}
     while True:
-
         # Get a list of Accession directories
         processing_dirs = find_accession_directories(".")
         if len(processing_dirs) > 0:
@@ -431,7 +401,9 @@ def main():
             if threads[t].is_alive() == False:
                 del threads[t]
 
-        logger.info(f"Currently Processing {list(threads)}")
+        # Only log when there are active processing threads
+        if threads:
+            logger.info(f"Currently Processing {list(threads)[0]}")
 
 logger.info(message)
 logger.info(f"OPEN TO RECEIVE ON > {local_aetitle} IP: {local_ip}:{local_port}")

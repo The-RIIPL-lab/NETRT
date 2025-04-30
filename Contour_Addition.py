@@ -77,11 +77,13 @@ def _add_overlay_layers(self, ds, mask_dict, match, series_instance_uid, output_
         hex_start += 2
         out_fn = output_directory / f"CT-with-overlay-{slice_str}.dcm"
 
+        # Specify the Transfer Syntax UID explicitly
+        transfer_syntax = ds.file_meta.TransferSyntaxUID
         if self.deidentify:
-            anonymized_dcm.save_as(out_fn)
+            anonymized_dcm.save_as(out_fn, write_like_original=False, transfer_syntax=transfer_syntax)
             return anonymized_dcm
         else:
-            ds.save_as(out_fn)
+            ds.save_as(out_fn, write_like_original=False, transfer_syntax=transfer_syntax)
             return ds
 
 class ContourAddition:
@@ -100,6 +102,14 @@ class ContourAddition:
             self.anonymizer = DicomAnonymizer()
 
     def process(self):
+        # Check if the DICOM path contains files
+        dcm_dir = Path(self.dcm_path)
+        if not dcm_dir.exists() or not any(dcm_dir.iterdir()):
+            raise Exception(f"No files found in the specified DICOM directory: {self.dcm_path}")
+        
+        print(f"DICOM directory: {self.dcm_path}")
+        print(f"STRUCT director: {self.struct_path} ")
+        #print(f"Files in directory: {[f for f in dcm_dir.iterdir()]}")
 
         # Generate a new SeriesInstanceUID for the series
         SeriesInstanceUID = pydicom.uid.generate_uid()
@@ -107,7 +117,8 @@ class ContourAddition:
         # Load dicom files
         RTstruct= RTStructBuilder.create_from(
             dicom_series_path=self.dcm_path,
-            rt_struct_path=self.struct_path
+            rt_struct_path=self.struct_path,
+            warn_only=True
         )
 
         # Provide a list of structures and filter out known problematic ones
@@ -168,7 +179,7 @@ class ContourAddition:
             
             # add padding 0s dynamically
             if len(slice_str) < 5:
-               slice_str  = '0' * (5 - len(slice_str)) + slice_str
+                slice_str  = '0' * (5 - len(slice_str)) + slice_str
 
             hex_start = 0x6000
 
@@ -248,26 +259,16 @@ class ContourAddition:
                     anonymized_dcm.PatientID = str("RT_" + self.RAND_ID).upper()
                     anonymized_dcm.PatientName = str("RT_" + self.RAND_ID).upper()
 
-                    # remove_these_tags = ['AccessionNumber', "MRN"]
-                    # for tag in remove_these_tags:
-                    #     if tag in ds:
-                    #         delattr(ds, tag)
-
-                    # ds.PatientID = str("RT_" + self.RAND_ID).upper()
-                    # ds.PatientName = str("RT_" + self.RAND_ID).upper()
-                    # ds.PatientAge = '0'
-                    # ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
-                    # ds.PatientSex= 'O' # delete Gender
-
                 hex_start = hex_start + 2
                 out_fn = output_directory / f"CT-with-overlay-{slice_str}.dcm"
 
-                #print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
+                # Specify the Transfer Syntax UID explicitly
+                transfer_syntax = ds.file_meta.TransferSyntaxUID
                 if self.deidentify == True:
-                    anonymized_dcm.save_as(out_fn)
+                    anonymized_dcm.save_as(out_fn, write_like_original=False, transfer_syntax=transfer_syntax)
                     return anonymized_dcm
                 else:
-                    ds.save_as(out_fn)
+                    ds.save_as(out_fn, write_like_original=False, transfer_syntax=transfer_syntax)
                     return ds
 
 
