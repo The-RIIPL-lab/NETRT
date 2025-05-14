@@ -28,11 +28,11 @@ class StudyProcessor:
         self.fsm = file_system_manager
         # Initialize anonymizer with its specific configuration section
         anonymization_settings = self.config.get("anonymization", {})
-        if anonymization_settings.get("enabled", False):
-            self.anonymizer = DicomAnonymizer(anonymization_settings)
-        else:
-            self.anonymizer = None
-            logger.info("Anonymization is disabled in StudyProcessor.")
+        # Always initialize the anonymizer to ensure AccessionNumber is always removed,
+        # even if anonymization is disabled in the config
+        self.anonymizer = DicomAnonymizer(anonymization_settings)
+        if not anonymization_settings.get("enabled", True):
+            logger.info("Full anonymization is disabled, only AccessionNumber will be removed.")
 
     def _handle_contour_logic(self, rtstruct_builder, dcm_path):
         """Handles the new contour logic: ignore skull, merge others.
@@ -105,15 +105,11 @@ class StudyProcessor:
 
         try:
             # --- Configuration items --- 
-            base_anon_flag = self.config.get("anonymization", {}).get("enabled", False)
+            base_anon_flag = self.config.get("anonymization", {}).get("enabled", True)
             full_anon_flag = self.config.get("anonymization", {}).get("full_anonymization_enabled", False)
 
-            if base_anon_flag and full_anon_flag:
-                deidentify_config_flag = True
-            else:
-                deidentify_config_flag = False
-
-            deidentify_for_old_modules = self.anonymizer is not None and deidentify_config_flag
+            # Only enable full de-identification for legacy modules if both flags are enabled
+            deidentify_for_old_modules = base_anon_flag and full_anon_flag
             new_study_instance_id_for_series = pydicom.uid.generate_uid()
             new_fod_ref_id = pydicom.uid.generate_uid()
             
@@ -123,32 +119,41 @@ class StudyProcessor:
                 rand_id_for_old_modules = "".join(random.choice(letters) for _ in range(8)).upper()
                 logger.info(f"De-identification enabled for legacy modules. RAND_ID: {rand_id_for_old_modules}")
 
-            # --- Anonymize original files (if enabled) ---
+            # --- Anonymize original files ---
             # This step should ideally happen *before* any processing that uses DICOM tags from original files
             # if the anonymization modifies those tags. The DicomAnonymizer class is now config-driven.
-            if self.anonymizer:
-                logger.info(f"Applying configured anonymization to files in {dcm_path} for study {study_instance_uid}")
-                for root, _, files in os.walk(dcm_path):
-                    for filename in files:
-                        if filename.lower().endswith(".dcm"):
-                            filepath = os.path.join(root, filename)
-                            if self.config.get("anonymization", {}).get("full_anonymization_enabled", False) and self.config.get("anonymization", {}).get("enabled", True):
-                                try:
-                                    ds = pydicom.dcmread(filepath)
-                                    self.anonymizer.anonymize(ds)
-                                    ds.save_as(filepath) # Save changes
-                                    logger.debug(f"Anonymized and saved: {filepath}")
-                                except Exception as e:
-                                    logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
-                if struct_file_path:
-                    if self.config.get("anonymization", {}).get("full_anonymization_enabled", False) and self.config.get("anonymization", {}).get("enabled", True):
+            # Always apply anonymization to remove at least AccessionNumber even if anonymization is disabled
+            logger.info(f"Applying anonymization to files in {dcm_path} for study {study_instance_uid}")
+            anon_enabled = self.config.get("anonymization", {}).get("enabled", True)
+            full_anon_enabled = self.config.get("anonymization", {}).get("full_anonymization_enabled", False)
+            
+            if anon_enabled:
+                logger.info(f"Anonymization is enabled. Full anonymization: {full_anon_enabled}")
+            else:
+                logger.info("Anonymization is disabled. Only AccessionNumber will be removed.")
+                
+            # Process all DICOM files in the DCM directory
+            for root, _, files in os.walk(dcm_path):
+                for filename in files:
+                    if filename.lower().endswith(".dcm"):
+                        filepath = os.path.join(root, filename)
                         try:
-                            ds_struct = pydicom.dcmread(struct_file_path)
-                            self.anonymizer.anonymize(ds_struct)
-                            ds_struct.save_as(struct_file_path)
-                            logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
+                            ds = pydicom.dcmread(filepath)
+                            self.anonymizer.anonymize(ds)
+                            ds.save_as(filepath) # Save changes
+                            logger.debug(f"Anonymized and saved: {filepath}")
                         except Exception as e:
-                            logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
+                            logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
+            
+            # Process the RTSTRUCT file if it exists
+            if struct_file_path:
+                try:
+                    ds_struct = pydicom.dcmread(struct_file_path)
+                    self.anonymizer.anonymize(ds_struct)
+                    ds_struct.save_as(struct_file_path)
+                    logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
 
             # --- Contour Addition ---
             if struct_file_path:

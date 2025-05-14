@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import pydicom
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class DicomAnonymizer:
                 "enabled": True,
                 "full_anonymization_enabled": False,
                 "rules": {
-                    "remove_tags": ["AccessionNumber"],
+                    "remove_tags": ["AccessionNumber", "PatientID"],
                     "blank_tags": [],
                     "generate_random_id_prefix": ""
                 }
@@ -73,17 +74,13 @@ class DicomAnonymizer:
                 'RequestingPhysician'
             ]
         else:
-            # Minimal anonymization - only remove specific tags
-            # Get custom tags to remove from config if available, otherwise use defaults
+            # Partial anonymization - only remove specific tags from config
             self.tags_to_remove = self.config.get("rules", {}).get("remove_tags", ["AccessionNumber", "PatientID"])
             self.tags_to_empty = self.config.get("rules", {}).get("blank_tags", [])
         
-        # Ensure AccessionNumber and PatientID are always in one of the lists
+        # Ensure AccessionNumber is always removed or emptied regardless of anonymization setting
         if "AccessionNumber" not in self.tags_to_remove and "AccessionNumber" not in self.tags_to_empty:
             self.tags_to_remove.append("AccessionNumber")
-        
-        if "PatientID" not in self.tags_to_remove and "PatientID" not in self.tags_to_empty:
-            self.tags_to_remove.append("PatientID")
         
         # Tags that need special handling if doing full anonymization
         self.special_tags = {}
@@ -103,6 +100,7 @@ class DicomAnonymizer:
         self.id_prefix = self.config.get("rules", {}).get("generate_random_id_prefix", "")
         
         logger.debug(f"DicomAnonymizer initialized with config: {self.config}")
+        logger.debug(f"Full anonymization enabled: {self.full_anonymization}")
         logger.debug(f"Tags to remove: {self.tags_to_remove}")
         logger.debug(f"Tags to empty: {self.tags_to_empty}")
 
@@ -116,48 +114,64 @@ class DicomAnonymizer:
         Returns:
             pydicom.dataset.FileDataset: Anonymized DICOM object
         """
-        # Create a copy to avoid modifying the original
-        anon_obj = dicom_obj.copy()
+        # Ensure we're working with a DICOM object
+        if not isinstance(dicom_obj, pydicom.dataset.Dataset):
+            logger.error("Object provided for anonymization is not a pydicom Dataset")
+            return dicom_obj
         
         # Remove identifiable tags
         for tag in self.tags_to_remove:
-            if hasattr(anon_obj, tag):
-                delattr(anon_obj, tag)
+            if hasattr(dicom_obj, tag):
+                delattr(dicom_obj, tag)
         
         # Empty specified tags
         for tag in self.tags_to_empty:
-            if hasattr(anon_obj, tag):
-                setattr(anon_obj, tag, '')
+            if hasattr(dicom_obj, tag):
+                setattr(dicom_obj, tag, '')
         
         # Handle special tags if doing full anonymization
         if self.full_anonymization:
             for tag, handler in self.special_tags.items():
-                if hasattr(anon_obj, tag):
-                    setattr(anon_obj, tag, handler(getattr(anon_obj, tag)))
+                if hasattr(dicom_obj, tag):
+                    setattr(dicom_obj, tag, handler(getattr(dicom_obj, tag)))
             
             # Generate a new StudyInstanceUID
-            if hasattr(anon_obj, 'StudyInstanceUID'):
-                anon_obj.StudyInstanceUID = self._generate_uid(anon_obj.StudyInstanceUID)
+            if hasattr(dicom_obj, 'StudyInstanceUID'):
+                dicom_obj.StudyInstanceUID = self._generate_uid(dicom_obj.StudyInstanceUID)
             
             # Generate a new SeriesInstanceUID
-            if hasattr(anon_obj, 'SeriesInstanceUID'):
-                anon_obj.SeriesInstanceUID = self._generate_uid(anon_obj.SeriesInstanceUID)
+            if hasattr(dicom_obj, 'SeriesInstanceUID'):
+                dicom_obj.SeriesInstanceUID = self._generate_uid(dicom_obj.SeriesInstanceUID)
             
             # Keep SOPInstanceUID but hash it
-            if hasattr(anon_obj, 'SOPInstanceUID'):
-                anon_obj.SOPInstanceUID = self._generate_uid(anon_obj.SOPInstanceUID)
+            if hasattr(dicom_obj, 'SOPInstanceUID'):
+                dicom_obj.SOPInstanceUID = self._generate_uid(dicom_obj.SOPInstanceUID)
+            
+            # Set PatientName to anonymous if it was removed
+            # Note: We need to create a new attribute after deleting it
+            if "PatientName" in self.tags_to_remove:
+                new_patient_id = self._generate_patient_id()
+                dicom_obj.PatientName = f"{self.id_prefix}ANONYMOUS_{new_patient_id}"
+                
+                # Also set a new PatientID that matches the anonymous name
+                dicom_obj.PatientID = new_patient_id
+        else:
+            # Default behavior for partial anonymization
+            # Ensure AccessionNumber is always cleared even if not in remove list
+            if hasattr(dicom_obj, 'AccessionNumber'):
+                dicom_obj.AccessionNumber = ""
+            
+            # Ensure PatientID is handled according to config
+            if "PatientID" in self.tags_to_remove and hasattr(dicom_obj, 'PatientID'):
+                dicom_obj.PatientID = ""
         
-        # Set PatientName and PatientID with optional prefix if they were removed
-        if "PatientID" in self.tags_to_remove:
-            anon_obj.PatientID = ""
-
-        if "AccessionNumber" in self.tags_to_remove:
-            anon_obj.AccessionNumber = ""
-        
-        if "PatientName" in self.tags_to_remove:
-            anon_obj.PatientName = f"{self.id_prefix}ANONYMOUS"
-        
-        return anon_obj
+        return dicom_obj
+    
+    def _generate_patient_id(self):
+        """Generate a random patient ID for full anonymization"""
+        import uuid
+        # Generate a short unique identifier (8 characters)
+        return str(uuid.uuid4()).replace('-', '')[:8]
 
     def _handle_date(self, date_str):
         """Modify date while preserving year/month"""
