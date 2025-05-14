@@ -162,12 +162,7 @@ class ContourProcessor:
                         logger.debug(f"Slice {slice_index} has no overlay data after merging.")
                 else:
                     logger.warning(f"Slice index {slice_index} out of bounds for combined mask shape {combined_mask_3d.shape}")
-
-                # Anonymization (if enabled and configured to run at this stage)
-                # This should ideally be handled by the study_processor after all DICOM modifications are done.
-                # if self.anonymizer and self.anonymization_config.get("enabled", False):
-                #     ds = self.anonymizer.anonymize_dataset(ds) # Anonymizer needs to be adapted
-
+                    
                 output_filename = os.path.join(output_addition_path, f"overlay_{ds.SOPInstanceUID}.dcm")
                 ds.save_as(output_filename, enforce_file_format=True)
                 logger.info(f"Saved DICOM with merged overlay: {output_filename}")

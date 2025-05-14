@@ -1,233 +1,198 @@
 import pydicom
+from datetime import datetime
+import hashlib
+import re
 import logging
-import hashlib # For UID generation if needed, though pydicom.uid.generate_uid is preferred for new UIDs
 
 logger = logging.getLogger(__name__)
 
 class DicomAnonymizer:
     """
-    A class to anonymize DICOM files based on configurable rules.
+    A class to anonymize DICOM files according to NEMA standards while preserving
+    image viewing capabilities. Supports configurable anonymization levels.
     """
-
-    def __init__(self, anonymization_config):
+    
+    def __init__(self, anonymization_config=None):
         """
-        Initializes the DicomAnonymizer with specific configuration.
-
+        Initialize the DicomAnonymizer with the provided configuration.
+        
         Args:
-            anonymization_config (dict): A dictionary containing anonymization rules.
-                                         Expected keys:
-                                         - "enabled" (bool): Global switch for anonymization.
-                                         - "full_anonymization_enabled" (bool): If true, applies extensive anonymization.
-                                         - "default_tags_to_remove" (list): Tags to remove if full_anonymization_enabled is false.
-                                         - "default_tags_to_blank" (list): Tags to blank if full_anonymization_enabled is false.
-                                         - "full_anonymization_rules" (dict): Rules for full anonymization, containing:
-                                             - "tags_to_remove" (list)
-                                             - "tags_to_empty" (list)
-                                             - "tags_to_modify_date" (list)
-                                             - "tags_to_modify_time" (list)
-                                             - "tags_to_regenerate_uid" (list) - UIDs to be replaced with new ones.
-                                             - "patient_id_override" (str or None): Value to set for PatientID if full anonymization.
-                                             - "patient_name_override" (str or None): Value to set for PatientName if full anonymization.
+            anonymization_config (dict): Configuration for anonymization settings
         """
-        self.config = anonymization_config
-        self.is_enabled = self.config.get("enabled", False)
+        self.config = anonymization_config or {}
+        
+        # Set default config if not provided
+        if not self.config:
+            self.config = {
+                "enabled": True,
+                "full_anonymization_enabled": False,
+                "rules": {
+                    "remove_tags": ["AccessionNumber", "PatientID"],
+                    "blank_tags": [],
+                    "generate_random_id_prefix": ""
+                }
+            }
+        
+        # Get full anonymization flag
         self.full_anonymization = self.config.get("full_anonymization_enabled", False)
-
-        if not self.is_enabled:
-            logger.info("DicomAnonymizer is disabled by configuration.")
-            return
-
+        
+        # Define tags to remove or blank based on anonymization level
         if self.full_anonymization:
-            rules = self.config.get("full_anonymization_rules", {})
-            self.tags_to_remove = rules.get("tags_to_remove", [])
-            self.tags_to_empty = rules.get("tags_to_empty", [])
-            self.tags_to_modify_date = rules.get("tags_to_modify_date", [])
-            self.tags_to_modify_time = rules.get("tags_to_modify_time", [])
-            self.tags_to_regenerate_uid = rules.get("tags_to_regenerate_uid", [])
-            self.patient_id_override = rules.get("patient_id_override", "ANONYMIZED_ID")
-            self.patient_name_override = rules.get("patient_name_override", "ANONYMIZED_NAME")
-            logger.info("DicomAnonymizer initialized for FULL anonymization.")
+            # Full anonymization - comprehensive list
+            self.tags_to_remove = [
+                'PatientName',
+                'PatientID',
+                'PatientBirthDate',
+                'PatientSex',
+                'PatientAge',
+                'PatientWeight',
+                'PatientAddress',
+                'PatientTelephoneNumbers',
+                'PatientMotherBirthName',
+                'OtherPatientIDs',
+                'OtherPatientNames',
+                'PatientBirthName',
+                'PatientSize',
+                'MilitaryRank',
+                'BranchOfService',
+                'EthnicGroup',
+                'PatientComments',
+                'DeviceSerialNumber',
+                'PlateID',
+                'InstitutionName',
+                'InstitutionAddress',
+                'ReferringPhysicianName',
+                'ReferringPhysicianAddress',
+                'ReferringPhysicianTelephoneNumbers',
+                'PhysiciansOfRecord',
+                'OperatorsName',
+                'AdmittingDiagnosesDescription'
+            ]
+            
+            self.tags_to_empty = [
+                'AccessionNumber',
+                'StudyID',
+                'PerformingPhysicianName',
+                'RequestingPhysician'
+            ]
         else:
-            self.tags_to_remove = self.config.get("default_tags_to_remove", ["AccessionNumber", "PatientID"])
-            self.tags_to_empty = self.config.get("default_tags_to_blank", []) # Changed from default_tags_to_blank
-            # For partial anonymization, we don't modify dates/times or UIDs by default unless specified
-            self.tags_to_modify_date = []
-            self.tags_to_modify_time = []
-            self.tags_to_regenerate_uid = [] 
-            self.patient_id_override = None # No override for PatientID/Name in partial by default
-            self.patient_name_override = None
-            logger.info(f"DicomAnonymizer initialized for PARTIAL anonymization (tags to remove: {self.tags_to_remove}, tags to empty: {self.tags_to_empty}).")
+            # Minimal anonymization - only remove specific tags
+            # Get custom tags to remove from config if available, otherwise use defaults
+            self.tags_to_remove = self.config.get("rules", {}).get("remove_tags", ["AccessionNumber", "PatientID"])
+            self.tags_to_empty = self.config.get("rules", {}).get("blank_tags", [])
+        
+        # Ensure AccessionNumber and PatientID are always in one of the lists
+        if "AccessionNumber" not in self.tags_to_remove and "AccessionNumber" not in self.tags_to_empty:
+            self.tags_to_remove.append("AccessionNumber")
+        
+        if "PatientID" not in self.tags_to_remove and "PatientID" not in self.tags_to_empty:
+            self.tags_to_remove.append("PatientID")
+        
+        # Tags that need special handling if doing full anonymization
+        self.special_tags = {}
+        if self.full_anonymization:
+            self.special_tags = {
+                'StudyDate': self._handle_date,
+                'SeriesDate': self._handle_date,
+                'AcquisitionDate': self._handle_date,
+                'ContentDate': self._handle_date,
+                'StudyTime': self._handle_time,
+                'SeriesTime': self._handle_time,
+                'AcquisitionTime': self._handle_time,
+                'ContentTime': self._handle_time
+            }
+        
+        # Get the custom ID prefix if specified
+        self.id_prefix = self.config.get("rules", {}).get("generate_random_id_prefix", "")
+        
+        logger.debug(f"DicomAnonymizer initialized with config: {self.config}")
+        logger.debug(f"Tags to remove: {self.tags_to_remove}")
+        logger.debug(f"Tags to empty: {self.tags_to_empty}")
 
-    def _generate_uid_from_original(self, original_uid):
-        """Generates a new UID based on a hash of the original one, for consistent anonymization."""
-        # This is a placeholder. For true anonymization with UID replacement,
-        # a robust, globally unique, and potentially traceable (for de-anonymization if needed)
-        # system is complex. Using pydicom's generate_uid() creates new random UIDs.
-        # Hashing can lead to collisions if not careful and doesn't guarantee DICOM UID format.
-        # For now, let's use pydicom's generator for simplicity if replacing.
-        # A common approach is to use a registered prefix.
-        # Example prefix for locally generated UIDs (not globally unique without registration)
-        # return pydicom.uid.generate_uid(prefix="2.25.") 
-        # The original DicomAnonymizer used a hash. Let's keep that pattern for now if that was intended.
-        hash_obj = hashlib.sha256(original_uid.encode())
-        hashed = hash_obj.hexdigest()
-        # DICOM UIDs are dot-separated numbers, max 64 chars. Hash is not directly usable.
-        # This needs a proper UID generation strategy. For now, returning a newly generated one.
-        # To maintain some link for consistent anonymization (same input UID -> same output UID),
-        # a dictionary lookup or a more sophisticated hashing scheme would be needed.
-        # For simplicity in this refactor, we'll generate a new random one.
-        # If consistent hashing is critical, the original _generate_uid method should be adapted.
-        new_uid = pydicom.uid.generate_uid(prefix="2.25.") # Example prefix
-        logger.debug(f"Regenerating UID: {original_uid} -> {new_uid}")
-        return new_uid
+    def anonymize(self, dicom_obj):
+        """
+        Anonymize a DICOM object according to the configured rules.
+        
+        Args:
+            dicom_obj: A pydicom.dataset.FileDataset object
+            
+        Returns:
+            pydicom.dataset.FileDataset: Anonymized DICOM object
+        """
+        # Create a copy to avoid modifying the original
+        anon_obj = dicom_obj.copy()
+        
+        # Remove identifiable tags
+        for tag in self.tags_to_remove:
+            if hasattr(anon_obj, tag):
+                delattr(anon_obj, tag)
+        
+        # Empty specified tags
+        for tag in self.tags_to_empty:
+            if hasattr(anon_obj, tag):
+                setattr(anon_obj, tag, '')
+        
+        # Handle special tags if doing full anonymization
+        if self.full_anonymization:
+            for tag, handler in self.special_tags.items():
+                if hasattr(anon_obj, tag):
+                    setattr(anon_obj, tag, handler(getattr(anon_obj, tag)))
+            
+            # Generate a new StudyInstanceUID
+            if hasattr(anon_obj, 'StudyInstanceUID'):
+                anon_obj.StudyInstanceUID = self._generate_uid(anon_obj.StudyInstanceUID)
+            
+            # Generate a new SeriesInstanceUID
+            if hasattr(anon_obj, 'SeriesInstanceUID'):
+                anon_obj.SeriesInstanceUID = self._generate_uid(anon_obj.SeriesInstanceUID)
+            
+            # Keep SOPInstanceUID but hash it
+            if hasattr(anon_obj, 'SOPInstanceUID'):
+                anon_obj.SOPInstanceUID = self._generate_uid(anon_obj.SOPInstanceUID)
+        
+        # Set PatientName and PatientID with optional prefix if they were removed
+        if "PatientID" in self.tags_to_remove:
+            anon_obj.PatientID = f"{self.id_prefix}ANONYMOUS"
+        
+        if "PatientName" in self.tags_to_remove:
+            anon_obj.PatientName = f"{self.id_prefix}ANONYMOUS"
+        
+        return anon_obj
 
     def _handle_date(self, date_str):
-        if not date_str or len(date_str) < 6:
-            return "" # Return empty if invalid or too short
-        return date_str[:6] + "01"  # Keep YYYYMM, set day to 01
+        """Modify date while preserving year/month"""
+        if not date_str:
+            return ''
+        try:
+            # Keep year and month, set day to 01
+            return date_str[:6] + '01'
+        except:
+            return ''
 
     def _handle_time(self, time_str):
-        if not time_str or len(time_str) < 2:
-            return "" # Return empty if invalid or too short
-        return time_str[:2] + "0000.00"  # Keep HH, zero out MMSS.FF
+        """Modify time while preserving hour"""
+        if not time_str:
+            return ''
+        try:
+            # Keep hour, zero out minutes and seconds
+            return time_str[:2] + '0000.000'
+        except:
+            return ''
 
-    def anonymize_dataset(self, ds):
+    def _generate_uid(self, original_uid):
         """
-        Anonymizes a pydicom Dataset object in-place based on the loaded configuration.
-
-        Args:
-            ds (pydicom.Dataset): The DICOM dataset to anonymize.
+        Generate a new UID based on the original one to maintain consistency
+        while ensuring uniqueness
         """
-        if not self.is_enabled:
-            return ds # Return original if anonymization is disabled
-
-        logger.debug(f"Anonymizing dataset. Full anonymization: {self.full_anonymization}")
-
-        # Remove tags
-        for tag_name in self.tags_to_remove:
-            if hasattr(ds, tag_name):
-                delattr(ds, tag_name)
-                logger.debug(f"Removed tag: {tag_name}")
-            elif tag_name in ds: # For tags accessed by keyword
-                del ds[tag_name]
-                logger.debug(f"Removed tag by keyword: {tag_name}")
-
-        # Empty tags
-        for tag_name in self.tags_to_empty:
-            if hasattr(ds, tag_name):
-                setattr(ds, tag_name, "")
-                logger.debug(f"Emptied tag: {tag_name}")
-            elif tag_name in ds:
-                 ds[tag_name].value = ""
-                 logger.debug(f"Emptied tag by keyword: {tag_name}")
-
-        if self.full_anonymization:
-            # Modify date tags
-            for tag_name in self.tags_to_modify_date:
-                if hasattr(ds, tag_name):
-                    original_value = getattr(ds, tag_name)
-                    setattr(ds, tag_name, self._handle_date(original_value))
-                    logger.debug(f"Modified date tag {tag_name}: {original_value} -> {getattr(ds, tag_name)}")
-            
-            # Modify time tags
-            for tag_name in self.tags_to_modify_time:
-                if hasattr(ds, tag_name):
-                    original_value = getattr(ds, tag_name)
-                    setattr(ds, tag_name, self._handle_time(original_value))
-                    logger.debug(f"Modified time tag {tag_name}: {original_value} -> {getattr(ds, tag_name)}")
-
-            # Regenerate UIDs
-            for tag_name in self.tags_to_regenerate_uid:
-                if hasattr(ds, tag_name):
-                    original_uid = getattr(ds, tag_name)
-                    # For file_meta UIDs, need to access differently
-                    if tag_name == "MediaStorageSOPInstanceUID" and ds.file_meta and hasattr(ds.file_meta, tag_name):
-                        ds.file_meta.MediaStorageSOPInstanceUID = self._generate_uid_from_original(original_uid)
-                    else:
-                        setattr(ds, tag_name, self._generate_uid_from_original(original_uid))
-            
-            # Override PatientID and PatientName if configured for full anonymization
-            if self.patient_id_override is not None:
-                ds.PatientID = self.patient_id_override
-                logger.debug(f"Set PatientID to: {self.patient_id_override}")
-            if self.patient_name_override is not None:
-                ds.PatientName = self.patient_name_override
-                logger.debug(f"Set PatientName to: {self.patient_name_override}")
+        # Create a hash of the original UID
+        hash_obj = hashlib.sha256(original_uid.encode())
+        hashed = hash_obj.hexdigest()
         
-        # Ensure no "RT_" prefix is added unless explicitly part of an override
-        # The current logic does not add any "RT_" prefix by default.
-
-        return ds
-
-# Example usage (for testing, typically called from study_processor)
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    
-    # Example configuration for partial anonymization (default if full_anonymization_enabled is false)
-    partial_config = {
-        "enabled": True,
-        "full_anonymization_enabled": False,
-        "default_tags_to_remove": ["AccessionNumber", "PatientID"], # MRN is usually PatientID
-        "default_tags_to_blank": ["PatientBirthDate"] # Example of blanking a tag
-    }
-
-    # Example configuration for full anonymization
-    full_config = {
-        "enabled": True,
-        "full_anonymization_enabled": True,
-        "full_anonymization_rules": {
-            "tags_to_remove": ["PatientAddress", "PatientTelephoneNumbers"],
-            "tags_to_empty": ["ReferringPhysicianName"],
-            "tags_to_modify_date": ["StudyDate", "SeriesDate"],
-            "tags_to_modify_time": ["StudyTime"],
-            "tags_to_regenerate_uid": ["StudyInstanceUID", "SeriesInstanceUID", "SOPInstanceUID", "MediaStorageSOPInstanceUID"],
-            "patient_id_override": "ANON123",
-            "patient_name_override": "ANON_PATIENT"
-        },
-        # These would be ignored if full_anonymization_enabled is true
-        "default_tags_to_remove": ["AccessionNumber", "PatientID"],
-        "default_tags_to_blank": []
-    }
-
-    # Test with partial anonymizer
-    anonymizer_partial = DicomAnonymizer(partial_config)
-    ds_test_partial = pydicom.Dataset()
-    ds_test_partial.PatientID = "PAT12345"
-    ds_test_partial.AccessionNumber = "ACC67890"
-    ds_test_partial.PatientName = "John Doe"
-    ds_test_partial.PatientBirthDate = "19700101"
-    ds_test_partial.StudyInstanceUID = pydicom.uid.generate_uid()
-
-    logger.info("--- Testing Partial Anonymization ---")
-    logger.info(f"Original Partial DS:\n{ds_test_partial}")
-    anonymized_ds_partial = anonymizer_partial.anonymize_dataset(ds_test_partial)
-    logger.info(f"Anonymized Partial DS:\n{anonymized_ds_partial}")
-    assert not hasattr(anonymized_ds_partial, "PatientID")
-    assert not hasattr(anonymized_ds_partial, "AccessionNumber")
-    assert anonymized_ds_partial.PatientName == "John Doe" # Should remain
-    assert anonymized_ds_partial.PatientBirthDate == "" # Should be blanked
-
-    # Test with full anonymizer
-    anonymizer_full = DicomAnonymizer(full_config)
-    ds_test_full = pydicom.Dataset()
-    ds_test_full.file_meta = pydicom.Dataset() # Add file_meta for MediaStorageSOPInstanceUID test
-    ds_test_full.PatientID = "PATXYZ"
-    ds_test_full.PatientName = "Jane Smith"
-    ds_test_full.PatientAddress = "123 Main St"
-    ds_test_full.StudyDate = "20230514"
-    ds_test_full.StudyTime = "134500.000"
-    original_study_uid = pydicom.uid.generate_uid()
-    ds_test_full.StudyInstanceUID = original_study_uid
-    ds_test_full.file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
-
-    logger.info("--- Testing Full Anonymization ---")
-    logger.info(f"Original Full DS:\n{ds_test_full}")
-    anonymized_ds_full = anonymizer_full.anonymize_dataset(ds_test_full)
-    logger.info(f"Anonymized Full DS:\n{anonymized_ds_full}")
-    assert not hasattr(anonymized_ds_full, "PatientAddress")
-    assert anonymized_ds_full.PatientID == "ANON123"
-    assert anonymized_ds_full.PatientName == "ANON_PATIENT"
-    assert anonymized_ds_full.StudyDate == "20230501"
-    assert anonymized_ds_full.StudyTime == "130000.00"
-    assert anonymized_ds_full.StudyInstanceUID != original_study_uid
-
+        # Ensure the new UID is valid according to DICOM standards
+        # Use a prefix that indicates this is an anonymized UID
+        prefix = "2.25." # Registered prefix for locally generated UIDs
+        
+        # Convert hash to a number sequence and truncate to ensure valid length
+        numeric_hash = int(hashed[:16], 16)
+        
+        return f"{prefix}{numeric_hash}"

@@ -15,15 +15,30 @@ class ContourAddition:
     def __init__(self, dcm_path, struct_path, deidentify, STUDY_INSTANCE_ID='', CT_SOPInstanceUID='', FOD_REF_ID='', RAND_ID=''):
         self.dcm_path = dcm_path
         self.struct_path = struct_path
-        self.deidentify  = deidentify
+        self.deidentify = deidentify
         self.RAND_ID = RAND_ID
-        self.SOPInstanceUID=CT_SOPInstanceUID
-        self.StudyInstanceUID=STUDY_INSTANCE_ID
-        self.FrameOfReferenceUID=FOD_REF_ID
+        self.SOPInstanceUID = CT_SOPInstanceUID
+        self.StudyInstanceUID = STUDY_INSTANCE_ID
+        self.FrameOfReferenceUID = FOD_REF_ID
 
         if deidentify == True:
             print("Addition: Starting Anonymizer")
-            self.anonymizer = DicomAnonymizer()
+            # Create a minimal anonymization config
+            anonymization_config = {
+                "enabled": True,
+                "full_anonymization_enabled": False,  # Only remove specific tags
+                "rules": {
+                    "remove_tags": ["AccessionNumber", "PatientID", "PatientName"],
+                    "blank_tags": [],
+                    "generate_random_id_prefix": ""  # No RT_ prefix by default
+                }
+            }
+            
+            # If a RAND_ID is provided, use it for the anonymized IDs
+            if RAND_ID:
+                anonymization_config["rules"]["generate_random_id_prefix"] = f"RT_{RAND_ID}_"
+                
+            self.anonymizer = DicomAnonymizer(anonymization_config)
 
     def process(self):
 
@@ -32,7 +47,6 @@ class ContourAddition:
 
         # Debug - print this path again
         print("DICOM Path:", self.dcm_path)
-        print("Files in DICOM Path:", os.listdir(self.dcm_path))
 
         # Load dicom files
         RTstruct= RTStructBuilder.create_from(
@@ -177,30 +191,21 @@ class ContourAddition:
                     del ds[0x0008, 0x0013] # delete Instance cretaion times
                 
                 if self.deidentify == True:
-
                     anonymized_dcm = self.anonymizer.anonymize(ds)
-                    anonymized_dcm.PatientID = str("RT_" + self.RAND_ID).upper()
-                    anonymized_dcm.PatientName = str("RT_" + self.RAND_ID).upper()
-
-                    # remove_these_tags = ['AccessionNumber', "MRN"]
-                    # for tag in remove_these_tags:
-                    #     if tag in ds:
-                    #         delattr(ds, tag)
-
-                    # ds.PatientID = str("RT_" + self.RAND_ID).upper()
-                    # ds.PatientName = str("RT_" + self.RAND_ID).upper()
-                    # ds.PatientAge = '0'
-                    # ds.PatientBirthDate = str(datetime.date.today()).replace('-','') # delete DOB
-                    # ds.PatientSex= 'O' # delete Gender
-
-                hex_start = hex_start + 2
-                out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
-
-                #print(" - Create File with Overlay: %s" % f"CT-with-overlay-{slice_str}.dcm")
-                if self.deidentify == True:
+                    
+                    # If RAND_ID is provided, set the patient identifiers directly
+                    # This allows backward compatibility with the original code
+                    if self.RAND_ID:
+                        anonymized_dcm.PatientID = f"RT_{self.RAND_ID}".upper()
+                        anonymized_dcm.PatientName = f"RT_{self.RAND_ID}".upper()
+                        
+                    hex_start = hex_start + 2
+                    out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
                     anonymized_dcm.save_as(out_fn)
                     return anonymized_dcm
                 else:
+                    hex_start = hex_start + 2
+                    out_fn = os.path.join(output_directory, f"CT-with-overlay-{slice_str}.dcm")
                     ds.save_as(out_fn)
                     return ds
 
@@ -247,5 +252,3 @@ class ContourAddition:
                 skipcount = skipcount + 1
 
         print("skipped, no SliceLocation: {}".format(skipcount))
-        
-        

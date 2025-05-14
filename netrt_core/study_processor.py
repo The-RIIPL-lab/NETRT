@@ -136,22 +136,24 @@ class StudyProcessor:
                     for filename in files:
                         if filename.lower().endswith(".dcm"):
                             filepath = os.path.join(root, filename)
-                            try:
-                                ds = pydicom.dcmread(filepath)
-                                self.anonymizer.anonymize_dataset(ds) # Anonymizes in-place
-                                ds.save_as(filepath) # Save changes
-                                logger.debug(f"Anonymized and saved: {filepath}")
-                            except Exception as e:
-                                logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
-                                # Decide if this is a critical failure for the whole study
+                            if self.anonymizer and self.config.get("anonymization", {}).get("enabled", False):
+                                try:
+                                    ds = pydicom.dcmread(filepath)
+                                    self.anonymizer.anonymize_dataset(ds)
+                                    ds.save_as(filepath) # Save changes
+                                    logger.debug(f"Anonymized and saved: {filepath}")
+                                except Exception as e:
+                                    logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
+                                    # Decide if this is a critical failure for the whole study
                 if struct_file_path:
-                    try:
-                        ds_struct = pydicom.dcmread(struct_file_path)
-                        self.anonymizer.anonymize_dataset(ds_struct)
-                        ds_struct.save_as(struct_file_path)
-                        logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
+                    if self.anonymizer and self.config.get("anonymization", {}).get("enabled", False):
+                        try:
+                            ds_struct = pydicom.dcmread(struct_file_path)
+                            self.anonymizer.anonymize_dataset(ds_struct)
+                            ds_struct.save_as(struct_file_path)
+                            logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
 
             # --- Contour Addition (incorporating new logic) ---
             if struct_file_path:
@@ -189,14 +191,15 @@ class StudyProcessor:
 
                 # --- Add Burn In --- (operates on the output of ContourAddition)
                 if self.config.get("processing", {}).get("add_burn_in_disclaimer", True):
-                    burn_in_text = self.config.get("processing", {}).get("burn_in_text", "FOR RESEARCH USE ONLY")
-                    burn_in_adder = Add_Burn_In.Add_Burn_In(addition_path, burn_in_text) # Pass text from config
+                    burn_in_text = self.config.get("processing", {}).get("burn_in_text", "RESEARCH IMAGE - Not for diagnostic purpose")
+                    burn_in_adder = Add_Burn_In.Add_Burn_In(addition_path, burn_in_text)
                     try:
                         burn_in_adder.apply_watermarks()
-                        logger.info("Burn-in disclaimer added.")
+                        logger.info(f"Burn-in disclaimer added with text: '{burn_in_text}'")
                     except Exception as e:
-                        logger.error(f"Apply watermark failed for study {study_instance_uid}: {e}", exc_info=True)
-                        # This might not be a fatal error for the whole study, depending on requirements.
+                        logger.error(f"Apply watermark failed for study {study_instance_uid}: {e}")
+                        self.fsm.quarantine_study(study_instance_uid, str(e))
+                        return False
                 else:
                     logger.info("Burn-in disclaimer is disabled by configuration.")
             else:

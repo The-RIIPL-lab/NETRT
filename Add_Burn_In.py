@@ -6,8 +6,9 @@ import copy
 
 
 class Add_Burn_In:
-    def __init__(self, directory):
+    def __init__(self, directory, burn_in_text="RESEARCH IMAGE - Not for diagnostic purpose"):
         self.directory = directory
+        self.burn_in_text = burn_in_text
         self.dicom_filepaths = self.get_dicom_filepaths()
 
     def get_dicom_filepaths(self):
@@ -50,8 +51,8 @@ class Add_Burn_In:
         # Cast the rescaled pixel values to the uint8 data type
         img_copy = img_rescaled.astype(np.uint8)
     
-        # Define the watermark text
-        watermark_text = "RESEARCH IMAGE - Not for diagnostic purpose"
+        # Use the provided burn-in text
+        watermark_text = self.burn_in_text
     
         # Define the font, font scale, color, and thickness of the text
         font = cv2.FONT_HERSHEY_SIMPLEX

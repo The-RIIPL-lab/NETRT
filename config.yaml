@@ -1,6 +1,3 @@
-# Default configuration for NETRT DICOM Processing Application
-# This file overrides the default settings defined in DEFAULT_CONFIG
-
 dicom_listener:
   # Host IP address to listen for incoming DICOM connections
   host: 152.11.105.71
@@ -16,3 +13,20 @@ dicom_destination:
   port: 4242
   # AE Title of the remote DICOM destination
   ae_title: RADIORIIPL
+
+processing:
+  # Text to use for burn-in watermarks
+  burn_in_text: "FOR RESEARCH USE ONLY - Not for clinical use"
+  ignore_contour_names_containing: ["skull"]
+  default_series_description: "Research CT with Contour Overlay"
+  default_series_number: 9901
+
+anonymization:
+  enabled: true
+  full_anonymization_enabled: false
+  rules:
+    remove_tags:
+      - "AccessionNumber"
+      - "PatientID"
+    blank_tags: []
+    generate_random_id_prefix: ""

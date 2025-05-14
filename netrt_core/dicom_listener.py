@@ -60,50 +60,43 @@ class DicomListener:
 
     def _handle_store(self, event):
         """Handle a C-STORE request event."""
-        source_ip = event.assoc.requestor.address
-        source_ae_title = event.assoc.requestor.ae_title
-        study_instance_uid = "UNKNOWN_STUDY_UID"
-        sop_instance_uid = "UNKNOWN_SOP_UID"
-        status = 0x0000 # Success by default
-
         try:
             dataset = event.dataset
-            # The dataset has been decoded using the negotiated transfer syntax
-            # dataset.file_meta = event.file_meta # pynetdicom does this automatically
-
-            study_instance_uid = getattr(dataset, "StudyInstanceUID", "MISSING_STUDY_UID")
-            sop_instance_uid = getattr(dataset, "SOPInstanceUID", "MISSING_SOP_UID")
-
-            transaction_logger.info(f"C-STORE request received. SourceIP: {source_ip}, SourceAET: {source_ae_title}, StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid}")
-
-            if study_instance_uid == "MISSING_STUDY_UID" or not study_instance_uid:
-                logger.error(f"Received dataset from {source_ip} missing StudyInstanceUID. Rejecting store.")
-                transaction_logger.error(f"C-STORE failed: Missing StudyInstanceUID. SourceIP: {source_ip}, SOPInstanceUID: {sop_instance_uid}")
-                return 0xA700 # Out of Resources - Or a more specific error like 0xA900 (Identifier does not match SOP Class)
-
-            # Determine negotiated transfer syntax for saving
-            negotiated_ts = None
-            use_negotiated_ts_for_save = self.config.get("dicom_listener", {}).get("config_negotiated_transfer_syntax", True)
-            if use_negotiated_ts_for_save and event.context and event.context.transfer_syntax:
-                negotiated_ts = event.context.transfer_syntax[0] # First one in the list
-                logger.debug(f"Using negotiated transfer syntax for saving: {negotiated_ts.name}")
             
-            file_path = self.file_system_manager.save_incoming_dicom(dataset, event.file_meta, negotiated_transfer_syntax=negotiated_ts)
+            # Extract the negotiated transfer syntax if available
+            negotiated_ts = None
+            if hasattr(event, 'context') and event.context:
+                negotiated_ts = event.context.transfer_syntax
+            
+            # Safely log the transfer syntax
+            if negotiated_ts:
+                logger.debug(f"Using negotiated transfer syntax for saving: {negotiated_ts}")
+            else:
+                logger.debug("No negotiated transfer syntax available, will use default")
+
+            # Ensure StudyInstanceUID is present
+            if not hasattr(dataset, "StudyInstanceUID") or not dataset.StudyInstanceUID:
+                logger.error("Received dataset missing StudyInstanceUID. Rejecting store.")
+                return 0xA700  # Out of Resources - Or a more specific error
+
+            # Use FileSystemManager to get the path for storing the file
+            file_path = self.file_system_manager.save_incoming_dicom(
+                dataset, 
+                event.file_meta,
+                negotiated_ts  # Pass the transfer syntax object or None
+            )
 
             if file_path:
-                logger.info(f"Stored DICOM file: {file_path} from {source_ip} (StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid})")
-                transaction_logger.info(f"C-STORE success: File saved. Path: {file_path}, SourceIP: {source_ip}, StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid}")
+                logger.info(f"Stored DICOM file: {file_path} from {event.assoc.requestor.address}")
             else:
-                logger.error(f"Failed to save DICOM file from {source_ip} (StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid})")
-                transaction_logger.error(f"C-STORE failed: Save error. SourceIP: {source_ip}, StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid}")
-                status = 0xA700 # Or another appropriate error status
+                logger.error("Failed to save DICOM file.")
+                return 0xA700  # Or another appropriate error status
 
         except Exception as e:
-            logger.error(f"Error handling C-STORE request from {source_ip} (StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid}): {e}", exc_info=True)
-            transaction_logger.error(f"C-STORE failed: Processing exception. SourceIP: {source_ip}, StudyUID: {study_instance_uid}, SOPInstanceUID: {sop_instance_uid}, Error: {str(e)}")
-            status = 0xC001 # Processing failure
+            logger.error(f"Error handling C-STORE request: {e}", exc_info=True)
+            return 0xC001  # Processing failure
 
-        return status
+        return 0x0000  # Success
 
     def _handle_conn_close(self, event):
         """Handle a connection close event."""

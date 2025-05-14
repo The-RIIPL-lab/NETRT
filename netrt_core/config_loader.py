@@ -58,13 +58,11 @@ DEFAULT_CONFIG = {
             "patient_name_override": "ANONYMIZED_NAME"
         }
     },
-    "processing": {
-        "ignore_contour_names_containing": ["skull", "patient_outline"],
+   "processing": {
+        "ignore_contour_names_containing": ["skull"],
         "default_series_description": "Processed DicomRT with Overlay",
-        "default_series_number_overlay": 9901,
-        "default_series_number_seg": 9902,
-        "add_burn_in_disclaimer": True,
-        "burn_in_text": "FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE"
+        "default_series_number": 9901,
+        "burn_in_text": "RESEARCH IMAGE - Not for diagnostic purpose"  # Add this line
     },
     "watcher": {
         "debounce_interval_seconds": 5,

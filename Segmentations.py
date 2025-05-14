@@ -16,11 +16,26 @@ class Segmentations:
         self.seg_path = seg_path
         self.deidentify = deidentify
         self.RAND_ID = RAND_ID
-        self.StudyInstanceUID=STUDY_INSTANCE_ID
+        self.StudyInstanceUID = STUDY_INSTANCE_ID
 
         if deidentify == True:
             print("Segmentation: Starting Anonymizer")
-            self.anonymizer = DicomAnonymizer()
+            # Create a minimal anonymization config
+            anonymization_config = {
+                "enabled": True,
+                "full_anonymization_enabled": False,  # Only remove specific tags
+                "rules": {
+                    "remove_tags": ["AccessionNumber", "PatientID", "PatientName"],
+                    "blank_tags": [],
+                    "generate_random_id_prefix": ""  # No RT_ prefix by default
+                }
+            }
+            
+            # If a RAND_ID is provided, use it for the anonymized IDs
+            if RAND_ID:
+                anonymization_config["rules"]["generate_random_id_prefix"] = f"RT_{RAND_ID}_"
+                
+            self.anonymizer = DicomAnonymizer(anonymization_config)
     
     def process(self):
 
@@ -155,7 +170,9 @@ class Segmentations:
         # Deidentify the patient information if required
         if self.deidentify == True:
             seg_dataset = self.anonymizer.anonymize(seg_dataset)
-            seg_dataset.PatientName = str("RT_" + self.RAND_ID).upper()
-            seg_dataset.PatientID = str("RT_" + self.RAND_ID).upper()
+            # If RAND_ID is provided, set the patient identifiers directly
+            if self.RAND_ID:
+                seg_dataset.PatientName = f"RT_{self.RAND_ID}".upper()
+                seg_dataset.PatientID = f"RT_{self.RAND_ID}".upper()
 
         seg_dataset.save_as(out_file)
