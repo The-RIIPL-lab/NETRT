@@ -1,0 +1,32 @@
+[Unit]
+Description=NETRT DICOM Processing Application
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appgroup
+
+# Set the working directory to the application root
+WorkingDirectory=/app
+
+# Command to start the application
+# Ensure the path to main.py and config.yaml are correct for your deployment
+# The Dockerfile places the app in /app and expects config in /app/config/config.yaml
+ExecStart=/usr/bin/python3 /app/main.py --config /app/config/config.yaml
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Standard output and error logging
+# By default, these will go to journald, which is standard for systemd services
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables (if any are needed by the application directly)
+# Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
+
