@@ -47,29 +47,24 @@ class DicomListener:
         """Handle a C-STORE request event."""
         try:
             dataset = event.dataset
-            # The dataset has been decoded using the negotiated transfer syntax
-            # dataset.file_meta = event.file_meta
 
             # Ensure StudyInstanceUID is present
             if not hasattr(dataset, "StudyInstanceUID") or not dataset.StudyInstanceUID:
                 logger.error("Received dataset missing StudyInstanceUID. Rejecting store.")
-                return 0xA700 # Out of Resources - Or a more specific error
+                return 0xA700  # Out of Resources - Or a more specific error
 
             # Use FileSystemManager to get the path for storing the file
-            # This will also handle creation of the study directory structure
-            # within the configured working directory.
-            # The FileSystemManager will return the full path to the file.
             file_path = self.file_system_manager.save_incoming_dicom(dataset, event.file_meta)
 
             if file_path:
                 logger.info(f"Stored DICOM file: {file_path} from {event.assoc.requestor.address}")
             else:
                 logger.error("Failed to save DICOM file.")
-                return 0xA700 # Or another appropriate error status
+                return 0xA700  # Or another appropriate error status
 
         except Exception as e:
             logger.error(f"Error handling C-STORE request: {e}", exc_info=True)
-            return 0xC001 # Processing failure
+            return 0xC001  # Processing failure
 
         return 0x0000  # Success
 
@@ -105,90 +100,3 @@ class DicomListener:
         """Stop the DICOM listener server."""
         logger.info("Stopping DICOM server...")
         self.ae.shutdown()
-
-# Example usage (will be part of the main application script later)
-if __name__ == "__main__":
-    # This is for testing the module directly, not for production use.
-    # Real implementation will use proper configuration and integration.
-    logging.basicConfig(level=logging.INFO)
-    
-    # Dummy FileSystemManager and StudyProcessor for testing
-    class DummyFSM:
-        def __init__(self, working_dir):
-            self.working_dir = working_dir
-            os.makedirs(self.working_dir, exist_ok=True)
-            logger.info(f"DummyFSM initialized with working_dir: {self.working_dir}")
-
-        def save_incoming_dicom(self, dataset, file_meta):
-            study_uid = dataset.StudyInstanceUID
-            sop_instance_uid = dataset.SOPInstanceUID
-            study_path = os.path.join(self.working_dir, f"UID_{study_uid}")
-            
-            # Determine if it's an RTSTRUCT or image
-            # This logic needs to be robust, using SOPClassUID or Modality
-            is_rtstruct = "RTSTRUCT" in str(dataset.SOPClassUID) or (hasattr(dataset, "Modality") and dataset.Modality == "RTSTRUCT")
-
-            if is_rtstruct:
-                series_dir_name = "Structure"
-            else:
-                series_dir_name = "DCM" # Or perhaps use SeriesInstanceUID for subfolders
-            
-            series_path = os.path.join(study_path, series_dir_name)
-            os.makedirs(series_path, exist_ok=True)
-            
-            filename = f"{sop_instance_uid}.dcm"
-            filepath = os.path.join(series_path, filename)
-            
-            try:
-                # Create a new file meta information for writing
-                file_meta_to_write = pydicom.Dataset()
-                file_meta_to_write.MediaStorageSOPClassUID = dataset.SOPClassUID
-                file_meta_to_write.MediaStorageSOPInstanceUID = dataset.SOPInstanceUID
-                file_meta_to_write.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian # Or negotiated TS
-                file_meta_to_write.ImplementationClassUID = pydicom.uid.generate_uid(prefix="1.2.3.") # Our UID
-                file_meta_to_write.ImplementationVersionName = "NETRT_CORE_0.1"
-
-                # Write the DICOM file
-                dataset.file_meta = file_meta_to_write
-                dataset.is_little_endian = True
-                dataset.is_implicit_VR = True
-                dataset.save_as(filepath, write_like_original=False)
-                logger.info(f"DummyFSM: Saved {filepath}")
-                return filepath
-            except Exception as e:
-                logger.error(f"DummyFSM: Error saving {filepath}: {e}", exc_info=True)
-                return None
-
-    class DummySP:
-        def process_study(self, study_path):
-            logger.info(f"DummySP: Processing study at {study_path}")
-
-    # Configuration (replace with actual config loading)
-    config = {
-        "dicom_listener": {
-            "host": "0.0.0.0",
-            "port": 11112,
-            "ae_title": "NETRTCORE"
-        },
-        "directories": {
-            "working": "/home/ubuntu/CNCT_working_test_listener"
-        }
-    }
-
-    fsm = DummyFSM(working_dir=config["directories"]["working"])
-    sp = DummySP()
-
-    listener = DicomListener(
-        host=config["dicom_listener"]["host"],
-        port=config["dicom_listener"]["port"],
-        ae_title=config["dicom_listener"]["ae_title"],
-        study_processor_callback=sp.process_study, # This callback needs to be more sophisticated
-        file_system_manager=fsm
-    )
-    try:
-        listener.start() # This will block
-    except KeyboardInterrupt:
-        logger.info("DICOM listener stopped by user.")
-    finally:
-        listener.stop()
-

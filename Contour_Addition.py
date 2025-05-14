@@ -1,9 +1,10 @@
 # Load necessary libraries
 import os
 import numpy as np
-import pydicom
+from pydicom import uid
+from pydicom.tag import Tag
+from pydicom import dcmread
 from rt_utils import RTStructBuilder
-#import matplotlib.pyplot as plt
 from pydicom.pixels import pack_bits
 import datetime
 import re
@@ -21,13 +22,17 @@ class ContourAddition:
         self.FrameOfReferenceUID=FOD_REF_ID
 
         if deidentify == True:
-            print("Starting Anonymizer")
+            print("Addition: Starting Anonymizer")
             self.anonymizer = DicomAnonymizer()
 
     def process(self):
 
         # Generate a new SeriesInstanceUID for the series
-        SeriesInstanceUID = pydicom.uid.generate_uid()
+        SeriesInstanceUID = uid.generate_uid()
+
+        # Debug - print this path again
+        print("DICOM Path:", self.dcm_path)
+        print("Files in DICOM Path:", os.listdir(self.dcm_path))
 
         # Load dicom files
         RTstruct= RTStructBuilder.create_from(
@@ -115,7 +120,7 @@ class ContourAddition:
                 ds.SOPClassUID = MediaSOPClassUID
 
                 # There change image to image
-                ds.file_meta.MediaSOPInstanceUID = pydicom.uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
+                ds.file_meta.MediaSOPInstanceUID = uid.generate_uid(prefix='1.2.840.10008.5.1.4.1.1.2.')
                 ds.SOPInstanceUID = ds.file_meta.MediaSOPInstanceUID 
                 
                 ds.StudyDescription = "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
@@ -138,15 +143,15 @@ class ContourAddition:
                 ds.SeriesDate = str(datetime.date.today()).replace('-','')
                 ds.StudyDate = str(datetime.date.today()).replace('-','')
 
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0040), 'CS', 'R')
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0050), 'SS', [1, 1])
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0100), 'US', 8)
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0102), 'US', 0)
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x022), 'LO', mask)
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x1500), 'LO', mask)
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x3000), 'OW', packed_bytes)
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
-                ds.add_new(pydicom.tag.Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
+                ds.add_new(Tag(hex_start, 0x0040), 'CS', 'R')
+                ds.add_new(Tag(hex_start, 0x0050), 'SS', [1, 1])
+                ds.add_new(Tag(hex_start, 0x0100), 'US', 8)
+                ds.add_new(Tag(hex_start, 0x0102), 'US', 0)
+                ds.add_new(Tag(hex_start, 0x022), 'LO', mask)
+                ds.add_new(Tag(hex_start, 0x1500), 'LO', mask)
+                ds.add_new(Tag(hex_start, 0x3000), 'OW', packed_bytes)
+                ds.add_new(Tag(hex_start, 0x0010), 'US', mask_slice.shape[0])
+                ds.add_new(Tag(hex_start, 0x0011), 'US', mask_slice.shape[1])
 
                 ds.StudyID = "RTPlanShare"
 
@@ -214,7 +219,7 @@ class ContourAddition:
         headers = []
         
         for f in files:
-            ds = pydicom.dcmread(os.path.join(self.dcm_path, f))
+            ds = dcmread(os.path.join(self.dcm_path, f))
             headers.append((ds[0x0020, 0x0013].value, f))
     
             # sort by header information (image number) and return a list of filenames sorted accordingly 
@@ -226,7 +231,7 @@ class ContourAddition:
         
             counter = counter + 1
 
-            fds = pydicom.dcmread(os.path.join(self.dcm_path, f))
+            fds = dcmread(os.path.join(self.dcm_path, f))
             number = f.split('.')[-2]
             
             if int(number) > 300:

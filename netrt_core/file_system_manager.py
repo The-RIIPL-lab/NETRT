@@ -19,8 +19,8 @@ class NewStudyEventHandler(FileSystemEventHandler):
         self.study_processor_callback = study_processor_callback
         # Use a dictionary to track activity in study directories and debounce
         self.study_activity_timers = {}
-        self.debounce_interval = self.fsm.config.get("watcher", {}).get("debounce_interval_seconds", 5)
-        self.min_file_count_for_processing = self.fsm.config.get("watcher", {}).get("min_file_count_for_processing", 2) # e.g., at least one image and one RTSTRUCT
+        self.debounce_interval = self.fsm.config.get("watcher", {}).get("debounce_interval_seconds", 7 )
+        self.min_file_count_for_processing = self.fsm.config.get("watcher", {}).get("min_file_count_for_processing", 5 ) # e.g., at least one image and one RTSTRUCT
 
     def _is_study_directory(self, path):
         return os.path.isdir(path) and os.path.basename(path).startswith("UID_")
@@ -191,31 +191,38 @@ class FileSystemManager:
             filepath = os.path.join(series_path, filename)
             
             # Ensure file_meta is appropriate for writing
-            ds_file_meta = pydicom.Dataset(file_meta) # Make a copy to modify
+            ds_file_meta = pydicom.Dataset(file_meta)  # Make a copy to modify
             ds_file_meta.MediaStorageSOPClassUID = sop_class_uid
             ds_file_meta.MediaStorageSOPInstanceUID = sop_instance_uid
+            
             if negotiated_transfer_syntax:
                 ds_file_meta.TransferSyntaxUID = negotiated_transfer_syntax
             elif not hasattr(ds_file_meta, "TransferSyntaxUID") or not ds_file_meta.TransferSyntaxUID:
-                logger.warning(f"No negotiated transfer syntax provided and not in file_meta for {sop_instance_uid}. Defaulting to ImplicitVRLittleEndian.")
+                logger.warning(f"No negotiated transfer syntax provided for {sop_instance_uid}. Defaulting to ImplicitVRLittleEndian.")
                 ds_file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian
-            
+
+            # Set required DICOM meta information
             ds_file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
             ds_file_meta.ImplementationVersionName = "NETRT_CORE_WD_0.1"
 
+            # Set the dataset file meta information
             dataset.file_meta = ds_file_meta
-            if ds_file_meta.TransferSyntaxUID.is_implicit_VR:
-                dataset.is_implicit_VR = True
-                dataset.is_little_endian = True # Implicit VR is always Little Endian
-            else: # Explicit VR
-                dataset.is_implicit_VR = False
-                dataset.is_little_endian = ds_file_meta.TransferSyntaxUID.is_little_endian
+            
+            # Ensure the DICM prefix is initiated
+            if not hasattr(dataset, 'is_implicit_VR') or not hasattr(dataset, 'is_little_endian'):
+                if ds_file_meta.TransferSyntaxUID.is_implicit_VR:
+                    dataset.is_implicit_VR = True
+                    dataset.is_little_endian = True  # Implicit VR is always Little Endian
+                else:  # Explicit VR
+                    dataset.is_implicit_VR = False
+                    dataset.is_little_endian = ds_file_meta.TransferSyntaxUID.is_little_endian
 
-            dataset.save_as(filepath, write_like_original=False)
+            # Save the dataset ensuring DICM header is included
+            dataset.save_as(filepath, enforce_file_format=True)
             logger.info(f"Saved DICOM file: {filepath} with TS: {ds_file_meta.TransferSyntaxUID}")
             return filepath
         except Exception as e:
-            logger.error(f"Error saving DICOM file {getattr(dataset, "SOPInstanceUID", "UNKNOWN_SOPUID")}: {e}", exc_info=True)
+            logger.error(f"Error saving DICOM file {getattr(dataset, 'SOPInstanceUID', 'UNKNOWN_SOPUID')}: {e}", exc_info=True)
             return None
 
     def quarantine_study(self, study_instance_uid, reason="Unknown error"):

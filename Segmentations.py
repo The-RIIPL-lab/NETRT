@@ -19,7 +19,7 @@ class Segmentations:
         self.StudyInstanceUID=STUDY_INSTANCE_ID
 
         if deidentify == True:
-            print("Starting Anonymizer")
+            print("Segmentation: Starting Anonymizer")
             self.anonymizer = DicomAnonymizer()
     
     def process(self):

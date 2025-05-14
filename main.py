@@ -60,7 +60,6 @@ def main():
         ae_title=config.get("dicom_listener", {}).get("ae_title", "CNCT"),
         study_processor_callback=study_processor_instance.process_study, # This callback is for the listener itself (e.g. on connection close)
         file_system_manager=file_system_manager,
-        #config=config # Pass full config for listener to access negotiated_transfer_syntax settings
     )
 
     # 4. Start Services

@@ -13,12 +13,14 @@ numpy==2.2.2
 opencv-python==4.11.0.86
 packaging==24.2
 pillow==11.1.0
+pyaml==25.1.0
 pydicom==3.0.1
 pyjpegls==1.4.0
 pynetdicom==2.0.2
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0
 PyWavelets==1.8.0
+PyYAML==6.0.2
 rt-utils==1.2.7
 scikit-image==0.25.1
 scipy==1.15.1
@@ -26,3 +28,4 @@ six==1.17.0
 tifffile==2025.1.10
 tqdm==4.67.1
 typing_extensions==4.12.2
+watchdog==6.0.0

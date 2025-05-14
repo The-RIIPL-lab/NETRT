@@ -169,7 +169,7 @@ class ContourProcessor:
                 #     ds = self.anonymizer.anonymize_dataset(ds) # Anonymizer needs to be adapted
 
                 output_filename = os.path.join(output_addition_path, f"overlay_{ds.SOPInstanceUID}.dcm")
-                ds.save_as(output_filename, write_like_original=False)
+                ds.save_as(output_filename, enforce_file_format=True)
                 logger.info(f"Saved DICOM with merged overlay: {output_filename}")
 
             except Exception as e:
@@ -183,7 +183,7 @@ class ContourProcessor:
 if __name__ == "__main__":
     # This requires a more complex setup with sample DICOMs and RTStruct
     # and a proper configuration dictionary.
-    logging.basicConfig(level=logging.INFO, format=\'%(asctime)s [%(levelname)s] %(name)s: %(message)s\')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
     logger.info("ContourProcessor module ready. Run with integration tests or a full application setup.")
 
     # Minimal config for testing structure

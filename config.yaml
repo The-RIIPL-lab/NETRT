@@ -3,9 +3,9 @@
 
 dicom_listener:
   # Host IP address to listen for incoming DICOM connections
-  host: 0.0.0.0
+  host: 152.11.105.71
   # TCP port for the DICOM listener
-  port: 11112
+  port: 11116
   # AE Title for the DICOM listener
   ae_title: CNCT_DEV
 

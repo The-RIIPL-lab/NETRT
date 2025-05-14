@@ -134,22 +134,34 @@ class StudyProcessor:
                     struct_path=struct_file_path, 
                     deidentify=deidentify, 
                     STUDY_INSTANCE_ID=STUDY_INSTANCE_ID, 
-                    CT_SOPInstanceUID=pydicom.uid.generate_uid(prefix=CT_SOPInstanceUID_prefix), # This UID generation needs review
+                    CT_SOPInstanceUID=pydicom.uid.generate_uid(prefix=CT_SOPInstanceUID_prefix), 
                     FOD_REF_ID=FOD_REF_ID, 
                     RAND_ID=RAND_ID,
-                    # output_dir=addition_path # A new parameter might be needed
+                    # output_dir=addition_path # This parameter might be needed
                 )
                 # The process method in ContourAddition needs to be updated to use the output_dir
                 # and to implement the new contour handling (skull ignore, merge others)
-                contour_adder.process() # This will write to its own `Addition` subdir for now.
-                logger.info("Contour addition process completed.")
+                 # Add error handling for the contour addition process
+                try:
+                    contour_adder.process()  # Ensure this is synchronous and waits for completion
+                    logger.info("Contour addition process completed.")
+                except Exception as e:
+                    logger.error(f"Contour addition failed for study {study_instance_uid}: {e}")
+                    self.fsm.quarantine_study(study_instance_uid, str(e))
+                    return False
 
                 # --- Add Burn In --- (operates on the output of ContourAddition)
                 # The original Contour_Addition saves into <study_path>/Addition
                 # We need to ensure Add_Burn_In looks there.
                 burn_in_adder = Add_Burn_In.Add_Burn_In(addition_path)
-                burn_in_adder.apply_watermarks()
-                logger.info("Burn-in disclaimer added.")
+                try:
+                    burn_in_adder.apply_watermarks()
+                    logger.info("Burn-in disclaimer added.")
+                except Exception as e:
+                    logger.error(f"Apply watermark failed for study {study_instance_uid}: {e}")
+                    self.fsm.quarantine_study(study_instance_uid, str(e))
+                    return False
+                
             else:
                 logger.info("No RTSTRUCT file found or specified, skipping contour addition and burn-in.")
                 # If no contours, addition_path might be empty. Send_Files needs to handle this.
