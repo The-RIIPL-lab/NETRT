@@ -25,7 +25,7 @@ class Segmentations:
                 "enabled": True,
                 "full_anonymization_enabled": False,  # Only remove specific tags
                 "rules": {
-                    "remove_tags": ["AccessionNumber", "PatientID", "PatientName"],
+                    "remove_tags": ["AccessionNumber", "PatientID"],
                     "blank_tags": [],
                     "generate_random_id_prefix": ""  # No RT_ prefix by default
                 }

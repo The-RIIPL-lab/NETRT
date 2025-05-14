@@ -22,7 +22,7 @@ processing:
   default_series_number: 9901
 
 anonymization:
-  enabled: true
+  enabled: false
   full_anonymization_enabled: false
   rules:
     remove_tags:

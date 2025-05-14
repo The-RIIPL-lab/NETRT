@@ -27,7 +27,7 @@ class DicomAnonymizer:
                 "enabled": True,
                 "full_anonymization_enabled": False,
                 "rules": {
-                    "remove_tags": ["AccessionNumber", "PatientID"],
+                    "remove_tags": ["AccessionNumber"],
                     "blank_tags": [],
                     "generate_random_id_prefix": ""
                 }
