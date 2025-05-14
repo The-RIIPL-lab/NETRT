@@ -5,9 +5,9 @@ import shutil
 import logging
 import time
 import pydicom
-from pydicom.filewriter import write_file_meta_info
+import threading
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, DirModifiedEvent, FileCreatedEvent, FileClosedEvent
+from watchdog.events import FileSystemEventHandler
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,13 @@ class NewStudyEventHandler(FileSystemEventHandler):
         # Use a dictionary to track activity in study directories and debounce
         self.study_activity_timers = {}
         self.debounce_interval = self.fsm.config.get("watcher", {}).get("debounce_interval_seconds", 7 )
-        self.min_file_count_for_processing = self.fsm.config.get("watcher", {}).get("min_file_count_for_processing", 5 ) # e.g., at least one image and one RTSTRUCT
+        self.min_file_count_for_processing = self.fsm.config.get("watcher", {}).get("min_file_count_for_processing", 5 )
+
+    def _is_processing_output_dir(self, path):
+        """Check if path is in a processing output directory that should be ignored for triggering."""
+        path_parts = path.split(os.sep)
+        # Check if any part of the path contains these directory names
+        return any(part in ["Addition", "Segmentations"] for part in path_parts)
 
     def _is_study_directory(self, path):
         return os.path.isdir(path) and os.path.basename(path).startswith("UID_")
@@ -50,19 +56,33 @@ class NewStudyEventHandler(FileSystemEventHandler):
             total_files += len([f for f in os.listdir(dcm_dir) if os.path.isfile(os.path.join(dcm_dir, f))])
         struct_dir = os.path.join(study_path, "Structure")
         if os.path.isdir(struct_dir):
-             total_files += len([f for f in os.listdir(struct_dir) if os.path.isfile(os.path.join(struct_dir, f))])
+            total_files += len([f for f in os.listdir(struct_dir) if os.path.isfile(os.path.join(struct_dir, f))])
 
         if total_files < self.min_file_count_for_processing:
             logger.debug(f"Debounce check: Study {study_uid} has only {total_files} files, less than min {self.min_file_count_for_processing}. Waiting.")
             return
 
+        # Check if study is already being processed and acquire lock
+        if self.fsm.is_study_being_processed(study_uid):
+            logger.info(f"Study {study_uid} is already being processed. Skipping duplicate processing.")
+            return
+
+        if not self.fsm.acquire_study_lock(study_uid):
+            logger.info(f"Could not acquire lock for study {study_uid}. It may be in processing by another thread.")
+            return
+
         logger.info(f"Debounce interval ended for study {study_uid}. Triggering processing.")
         if study_uid in self.study_activity_timers: # Ensure it was being tracked
             del self.study_activity_timers[study_uid] # Remove timer
-            # Add to a processing queue or call directly
-            # This needs to be thread-safe if study_processor_callback runs in a different thread.
-            # For now, direct call for simplicity, assuming study_processor handles its own threading or is quick.
-            self.study_processor_callback(study_uid)
+            
+            try:
+                # Call the study processor
+                self.study_processor_callback(study_uid)
+            except Exception as e:
+                logger.error(f"Error during study processing for {study_uid}: {e}", exc_info=True)
+            finally:
+                # Always release the lock when done
+                self.fsm.release_study_lock(study_uid)
 
     def _start_debounce_timer(self, study_path):
         study_uid = self._get_study_uid_from_path(study_path)
@@ -84,31 +104,42 @@ class NewStudyEventHandler(FileSystemEventHandler):
             logger.info(f"New study directory created: {event.src_path}")
             self._start_debounce_timer(event.src_path)
         elif not event.is_directory:
+            # Ignore files in processing output directories
+            if self._is_processing_output_dir(event.src_path):
+                logger.debug(f"Ignoring file creation event in processing directory: {event.src_path}")
+                return
+                
             # A file was created. Check if it is within a known study directory.
-            study_dir = os.path.dirname(os.path.dirname(event.src_path)) # e.g. .../UID_xyz/DCM/file.dcm -> .../UID_xyz
+            study_dir = os.path.dirname(os.path.dirname(event.src_path))
             if self._is_study_directory(study_dir):
-                 logger.debug(f"File created in study {study_dir}: {event.src_path}")
-                 self._start_debounce_timer(study_dir)
+                logger.debug(f"File created in study {study_dir}: {event.src_path}")
+                self._start_debounce_timer(study_dir)
 
     def on_modified(self, event):
         super().on_modified(event)
         # Often, directory modification events are more reliable for knowing when contents are settled.
-        # However, on_closed for files is better for individual file writes.
-        # For simplicity, we can restart debounce on any modification within a study dir.
         if event.is_directory and self._is_study_directory(event.src_path):
             logger.debug(f"Study directory modified: {event.src_path}")
             self._start_debounce_timer(event.src_path)
         elif not event.is_directory:
+            # Ignore files in processing output directories
+            if self._is_processing_output_dir(event.src_path):
+                logger.debug(f"Ignoring file modification event in processing directory: {event.src_path}")
+                return
+                
             study_dir = os.path.dirname(os.path.dirname(event.src_path))
             if self._is_study_directory(study_dir):
                 logger.debug(f"File modified in study {study_dir}: {event.src_path}")
                 self._start_debounce_timer(study_dir)
-    
-    # on_closed might be useful if writing large files and you want to trigger after write is complete.
-    # Requires Watchdog >= 0.10.0 and specific OS support (inotify with IN_CLOSE_WRITE)
+        
     def on_closed(self, event):
         super().on_closed(event)
         if not event.is_directory:
+            # Ignore files in processing output directories
+            if self._is_processing_output_dir(event.src_path):
+                logger.debug(f"Ignoring file closed event in processing directory: {event.src_path}")
+                return
+                
             study_dir = os.path.dirname(os.path.dirname(event.src_path))
             if self._is_study_directory(study_dir):
                 logger.info(f"File closed in study {study_dir}: {event.src_path}. Debouncing.")
@@ -117,8 +148,6 @@ class NewStudyEventHandler(FileSystemEventHandler):
 import threading # Required for Timer in NewStudyEventHandler
 
 class FileSystemManager:
-    """Handles directory watching, file organization, and cleanup."""
-
     def __init__(self, config, study_processor_callback=None):
         """Initialize the FileSystemManager.
 
@@ -132,6 +161,9 @@ class FileSystemManager:
         self.quarantine_dir = os.path.join(self.working_dir, self.quarantine_subdir)
         self.logs_dir = os.path.expanduser(config.get("directories", {}).get("logs", "~/CNCT_logs"))
 
+        # Add a lock dictionary to track processing studies
+        self.processing_locks = {}
+
         os.makedirs(self.working_dir, exist_ok=True)
         os.makedirs(self.quarantine_dir, exist_ok=True)
         os.makedirs(self.logs_dir, exist_ok=True)
@@ -144,6 +176,24 @@ class FileSystemManager:
             self.observer = Observer()
         else:
             logger.warning("No study_processor_callback provided to FileSystemManager. Watchdog observer not started.")
+
+    def is_study_being_processed(self, study_uid):
+        """Check if a study is currently being processed."""
+        return study_uid in self.processing_locks and self.processing_locks[study_uid].locked()
+
+    def acquire_study_lock(self, study_uid):
+        """Try to acquire a lock for study processing. Returns True if successful, False if already locked."""
+        if study_uid not in self.processing_locks:
+            self.processing_locks[study_uid] = threading.Lock()
+        
+        # Try to acquire the lock without blocking
+        return self.processing_locks[study_uid].acquire(blocking=False)
+
+    def release_study_lock(self, study_uid):
+        """Release the processing lock for a study."""
+        if study_uid in self.processing_locks and self.processing_locks[study_uid].locked():
+            self.processing_locks[study_uid].release()
+            logger.debug(f"Released processing lock for study {study_uid}")
 
     def start_watching(self):
         if self.observer and self.study_processor_callback:
