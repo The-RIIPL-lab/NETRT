@@ -1,0 +1,18 @@
+# Default configuration for NETRT DICOM Processing Application
+# This file overrides the default settings defined in DEFAULT_CONFIG
+
+dicom_listener:
+  # Host IP address to listen for incoming DICOM connections
+  host: 0.0.0.0
+  # TCP port for the DICOM listener
+  port: 11112
+  # AE Title for the DICOM listener
+  ae_title: CNCT_DEV
+
+dicom_destination:
+  # IP address of the remote DICOM destination
+  ip: 152.11.105.71
+  # TCP port of the remote DICOM destination
+  port: 4242
+  # AE Title of the remote DICOM destination
+  ae_title: RADIORIIPL
