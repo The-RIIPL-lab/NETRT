@@ -1,4 +1,3 @@
-# Load necessary libraries
 import os
 import numpy as np
 from pydicom import uid

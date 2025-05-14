@@ -1,5 +1,3 @@
-# netrt_core/contour_processor.py
-
 import os
 import numpy as np
 import pydicom
@@ -173,30 +171,3 @@ class ContourProcessor:
                 return False # Indicate failure for the study
         
         return True # Indicate success for the study
-
-# Example usage (for testing - will be integrated into the main application)
-if __name__ == "__main__":
-    # This requires a more complex setup with sample DICOMs and RTStruct
-    # and a proper configuration dictionary.
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-    logger.info("ContourProcessor module ready. Run with integration tests or a full application setup.")
-
-    # Minimal config for testing structure
-    test_config = {
-        "processing": {
-            "ignore_contour_names_containing": ["skull", "patient outline"],
-            "default_series_description": "Test Overlay Series",
-            "default_series_number": 9910
-        },
-        "anonymization": {"enabled": False} # Assuming anonymization is handled elsewhere
-    }
-    # cp = ContourProcessor(test_config)
-    # To test cp.process_study_for_contours(...), you would need:
-    # - dcm_path: path to a directory with DICOM image slices
-    # - struct_path: path to an RTSTRUCT file corresponding to the images
-    # - output_addition_path: path to an output directory
-    # - original_study_uid: UID string
-    # - original_for_uid: UID string
-    # Example: 
-    # cp.process_study_for_contours("./sample_data/dcm_series", "./sample_data/rtstruct.dcm", "./output/addition", "1.2.3", "1.2.3.1")
-

@@ -22,7 +22,7 @@ processing:
   default_series_number: 9901
 
 anonymization:
-  enabled: false
+  enabled: true
   full_anonymization_enabled: false
   rules:
     remove_tags:
@@ -30,3 +30,6 @@ anonymization:
       - "PatientID"
     blank_tags: []
     generate_random_id_prefix: ""
+
+feature_flags:
+  enable_segmentation_export: False

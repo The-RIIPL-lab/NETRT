@@ -1,8 +1,4 @@
-# netrt_core/dicom_listener.py
-
-import os
 import logging
-import pydicom
 from pydicom.filewriter import write_file_meta_info
 from pynetdicom import AE, evt, AllStoragePresentationContexts, ALL_TRANSFER_SYNTAXES
 from pynetdicom.sop_class import Verification

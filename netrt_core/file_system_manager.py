@@ -1,5 +1,3 @@
-# netrt_core/file_system_manager.py
-
 import os
 import shutil
 import logging
@@ -301,36 +299,3 @@ class FileSystemManager:
                 logger.error(f"Error cleaning up study directory {study_path}: {e}", exc_info=True)
         else:
             logger.info(f"Attempted to clean up non-existent study directory: {study_path}")
-
-# Example usage (for testing - will be integrated into the main application)
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-    
-    def dummy_study_processor(study_uid):
-        logger.info(f"MAIN_TEST: Dummy study processor called for study UID: {study_uid}")
-        # In a real app, this would queue the study_uid for processing by StudyProcessor instance
-
-    test_config = {
-        "directories": {
-            "working": "/home/ubuntu/CNCT_working_fsm_watchdog_test",
-            "logs": "/home/ubuntu/CNCT_logs_fsm_watchdog_test",
-            "quarantine_subdir": "failed_studies"
-        },
-        "watcher": {
-            "debounce_interval_seconds": 3,
-            "min_file_count_for_processing": 1 # For simple test
-        }
-    }
-    fsm = FileSystemManager(test_config, dummy_study_processor)
-    fsm.start_watching()
-    logger.info(f"FSM watching dir: {fsm.working_dir}. Create subdirectories like UID_teststudy/DCM/file.dcm to test.")
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, stopping watcher.")
-    finally:
-        fsm.stop_watching()
-        logger.info("FSM watcher stopped.")
-

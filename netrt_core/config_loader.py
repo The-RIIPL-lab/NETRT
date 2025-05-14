@@ -1,5 +1,3 @@
-# netrt_core/config_loader.py
-
 import yaml
 import os
 import logging
@@ -21,8 +19,7 @@ DEFAULT_CONFIG = {
     "directories": {
         "working": "~/CNCT_working",
         "logs": "~/CNCT_logs",
-        "quarantine_subdir": "quarantine",
-        "ip_validation_file": "./valid_networks.json" # Path to IP validation file
+        "quarantine_subdir": "quarantine"
     },
     "logging": {
         "level": "INFO",
@@ -33,12 +30,12 @@ DEFAULT_CONFIG = {
     },
     "anonymization": {
         "enabled": True,
-        "full_anonymization_enabled": False, # Default to partial anonymization
-        "default_tags_to_remove": [ # Tags to remove if full_anonymization_enabled is false
+        "full_anonymization_enabled": False, 
+        "default_tags_to_remove": [ 
             "AccessionNumber", 
-            "PatientID" # Covers MRN
+            "PatientID" 
         ],
-        "default_tags_to_blank": [], # Tags to blank if full_anonymization_enabled is false
+        "default_tags_to_blank": [ "AccessionNumber", "PatientID" ], # Tags to blank if full_anonymization_enabled is false
         "full_anonymization_rules": { # Rules for full anonymization
             "tags_to_remove": [
                 "PatientAddress", "PatientTelephoneNumbers", "PatientMotherBirthName",
@@ -128,19 +125,3 @@ def _save_default_config(config_path, config_data):
         logger.info(f"Saved default configuration to {config_path}")
     except Exception as e:
         logger.error(f"Could not save default configuration to {config_path}: {e}")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    # Test loading (will create config.yaml in current dir if not exists)
-    cfg = load_config("test_app_config.yaml")
-    print("Loaded configuration:")
-    import json
-    print(json.dumps(cfg, indent=4))
-
-    # Test that directories are expanded
-    print(f"Working directory: {cfg['directories']['working']}")
-    print(f"Logs directory: {cfg['directories']['logs']}")
-    print(f"Anonymization enabled: {cfg['anonymization']['enabled']}")
-    print(f"Full anonymization: {cfg['anonymization']['full_anonymization_enabled']}")
-    print(f"Default tags to remove: {cfg['anonymization']['default_tags_to_remove']}")
-

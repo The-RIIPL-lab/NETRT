@@ -1,7 +1,4 @@
-import pydicom
-from datetime import datetime
 import hashlib
-import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -152,7 +149,10 @@ class DicomAnonymizer:
         
         # Set PatientName and PatientID with optional prefix if they were removed
         if "PatientID" in self.tags_to_remove:
-            anon_obj.PatientID = f"{self.id_prefix}ANONYMOUS"
+            anon_obj.PatientID = ""
+
+        if "AccessionNumber" in self.tags_to_remove:
+            anon_obj.AccessionNumber = ""
         
         if "PatientName" in self.tags_to_remove:
             anon_obj.PatientName = f"{self.id_prefix}ANONYMOUS"

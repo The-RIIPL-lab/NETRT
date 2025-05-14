@@ -1,18 +1,13 @@
-# netrt_core/study_processor.py
-
 import os
 import logging
 import pydicom
-import random # For RAND_ID if de-identifying, though this should be managed better
-import time # For timing events
-
-# Import existing application modules - these might need adaptation later
-# For now, assume they are in the parent directory or Python path is set up
-from DicomAnonymizer import DicomAnonymizer # Corrected import based on file name
-import Contour_Addition  # Assuming Contour_Addition.py is accessible
-import Add_Burn_In       # Assuming Add_Burn_In.py is accessible
-import Send_Files        # Assuming Send_Files.py is accessible
-import Segmentations     # Assuming Segmentations.py is accessible
+import random
+import time
+from DicomAnonymizer import DicomAnonymizer
+import Contour_Addition
+import Add_Burn_In
+import Send_Files
+import Segmentations
 
 # Standard logger for general module events
 logger = logging.getLogger(__name__)
@@ -110,16 +105,17 @@ class StudyProcessor:
 
         try:
             # --- Configuration items --- 
-            deidentify_config_flag = self.config.get("anonymization", {}).get("enabled", False)
-            # If anonymizer is None, deidentify is effectively False for the old modules
-            deidentify_for_old_modules = self.anonymizer is not None and deidentify_config_flag
+            base_anon_flag = self.config.get("anonymization", {}).get("enabled", False)
+            full_anon_flag = self.config.get("anonymization", {}).get("full_anonymization_enabled", False)
 
-            # UIDs for new series - these should be robustly generated.
-            # The original script generated these per-study. This might need review for true DICOM compliance if these are meant to be globally unique across app runs.
-            # For now, keeping the pattern of generating them per processing run.
-            new_study_instance_id_for_series = pydicom.uid.generate_uid() # Used as Study UID for *new* series by old modules
+            if base_anon_flag and full_anon_flag:
+                deidentify_config_flag = True
+            else:
+                deidentify_config_flag = False
+
+            deidentify_for_old_modules = self.anonymizer is not None and deidentify_config_flag
+            new_study_instance_id_for_series = pydicom.uid.generate_uid()
             new_fod_ref_id = pydicom.uid.generate_uid()
-            # CT_SOPInstanceUID_prefix = "1.2.840.10008.5.1.4.1.1.2." # Example for CT, old modules generate full UIDs
             
             rand_id_for_old_modules = ""
             if deidentify_for_old_modules:
@@ -136,52 +132,42 @@ class StudyProcessor:
                     for filename in files:
                         if filename.lower().endswith(".dcm"):
                             filepath = os.path.join(root, filename)
-                            if self.anonymizer and self.config.get("anonymization", {}).get("enabled", False):
+                            if self.config.get("anonymization", {}).get("full_anonymization_enabled", False) and self.config.get("anonymization", {}).get("enabled", True):
                                 try:
                                     ds = pydicom.dcmread(filepath)
-                                    self.anonymizer.anonymize_dataset(ds)
+                                    self.anonymizer.anonymize(ds)
                                     ds.save_as(filepath) # Save changes
                                     logger.debug(f"Anonymized and saved: {filepath}")
                                 except Exception as e:
                                     logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
-                                    # Decide if this is a critical failure for the whole study
                 if struct_file_path:
-                    if self.anonymizer and self.config.get("anonymization", {}).get("enabled", False):
+                    if self.config.get("anonymization", {}).get("full_anonymization_enabled", False) and self.config.get("anonymization", {}).get("enabled", True):
                         try:
                             ds_struct = pydicom.dcmread(struct_file_path)
-                            self.anonymizer.anonymize_dataset(ds_struct)
+                            self.anonymizer.anonymize(ds_struct)
                             ds_struct.save_as(struct_file_path)
                             logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
                         except Exception as e:
                             logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
 
-            # --- Contour Addition (incorporating new logic) ---
+            # --- Contour Addition ---
             if struct_file_path:
                 logger.info(f"Processing contours from {struct_file_path} for images in {dcm_path}")
-                # Contour_Addition needs refactoring to use config for SeriesNumber, Description, and the new contour logic.
-                # It also needs to handle the output directory properly.
-                # The `ignore_contour_names_containing` and merging logic should be part of Contour_Addition or a pre-step.
-                # For now, we assume Contour_Addition.py might need to be adapted to use self.config directly or passed specific params.
-                contour_series_desc = self.config.get("processing", {}).get("default_series_description", "Processed DicomRT with Overlay")
-                contour_series_num = self.config.get("processing", {}).get("default_series_number_overlay", 9901)
+
+                #contour_series_desc = self.config.get("processing", {}).get("default_series_description", "Processed DicomRT with Overlay")
+                #contour_series_num = self.config.get("processing", {}).get("default_series_number_overlay", 9901)
 
                 try:
-                    # This is a simplification. Contour_Addition needs to be significantly refactored.
-                    # It should take the list of ROIs to process from _handle_contour_logic if that pre-filters.
-                    # Or, Contour_Addition itself should implement the filtering based on config.
                     contour_adder = Contour_Addition.ContourAddition(
                         dcm_path=dcm_path, 
                         struct_path=struct_file_path, 
-                        deidentify=deidentify_for_old_modules, # Legacy flag
+                        deidentify=deidentify_for_old_modules, 
                         STUDY_INSTANCE_ID=new_study_instance_id_for_series, 
-                        CT_SOPInstanceUID=pydicom.uid.generate_uid(), # Placeholder, needs better UID mgmt
+                        CT_SOPInstanceUID=pydicom.uid.generate_uid(), 
                         FOD_REF_ID=new_fod_ref_id, 
                         RAND_ID=rand_id_for_old_modules,
-                        # TODO: Pass series_description, series_number from config
-                        # TODO: Pass ignore_contour_names from config
-                        # TODO: Ensure output is to `addition_path`
                     )
-                    contour_adder.process() # This is a call to the old module
+                    contour_adder.process()
                     logger.info("Contour addition process completed.")
                 except Exception as e:
                     logger.error(f"Contour addition failed for study {study_instance_uid}: {e}", exc_info=True)
@@ -206,8 +192,6 @@ class StudyProcessor:
                 logger.info("No RTSTRUCT file found or specified, skipping contour addition and burn-in.")
 
             # --- DICOM SEG Creation (if enabled and not de-identifying for old modules) ---
-            # The `deidentify_for_old_modules` flag is a bit confusing here. SEG creation might have its own anonymization needs.
-            # For now, using the old logic.
             if self.config.get("feature_flags", {}).get("enable_segmentation_export", False) and struct_file_path:
                 if not deidentify_for_old_modules: # Original condition
                     logger.info("Creating DICOM SEG objects.")
@@ -219,14 +203,12 @@ class StudyProcessor:
                             struct_path=struct_file_path, 
                             seg_path=seg_path, 
                             DEIDENTIFY=deidentify_for_old_modules, 
-                            STUDY_INSTANCE_ID=new_study_instance_id_for_series
-                            # TODO: Pass SeriesNumber, SeriesDescription from config
+                            STUDY_INSTANCE_ID=new_study_instance_id_for_series,
                         )
                         segmentation_creator.process()
                         logger.info("DICOM SEG creation completed.")
                     except Exception as e:
                         logger.error(f"DICOM SEG creation failed for study {study_instance_uid}: {e}", exc_info=True)
-                        # This might not be a fatal error for the whole study.
                 else:
                     logger.info("DICOM SEG creation skipped due to de-identification flag for legacy modules.")
             else:
@@ -283,67 +265,3 @@ class StudyProcessor:
             self.fsm.quarantine_study(study_instance_uid, str(e))
             transaction_logger.error(f"PROCESSING_FAILED StudyUID: {study_instance_uid}, DurationSec: {processing_duration:.2f}, Reason: {str(e)}")
             return False
-
-# Example usage (for testing - will be integrated into the main application)
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-    
-    # Dummy config and FSM for testing StudyProcessor
-    # This requires the dependent modules (Contour_Addition etc.) to be in PYTHONPATH
-    # and a valid DICOM dataset in the specified structure.
-    # This test is complex to set up standalone and is better tested via integration tests.
-    
-    from netrt_core.config_loader import DEFAULT_CONFIG # Use default config for structure
-    test_config = DEFAULT_CONFIG
-    test_config["directories"]["working"] = "/tmp/CNCT_working_sp_test"
-    test_config["directories"]["logs"] = "/tmp/CNCT_logs_sp_test"
-    test_config["anonymization"]["enabled"] = False # Test without anonymization first
-    test_config["feature_flags"]["enable_segmentation_export"] = True
-
-    # Setup logging for the test
-    from netrt_core.logging_setup import setup_logging, TRANSACTION_LOGGER_NAME
-    setup_logging(test_config)
-
-    class MockFSM:
-        def __init__(self, config):
-            self.working_dir = os.path.expanduser(config.get("directories", {}).get("working", "~/CNCT_working"))
-            self.quarantine_dir = os.path.join(self.working_dir, config.get("directories", {}).get("quarantine_subdir", "quarantine"))
-            os.makedirs(self.working_dir, exist_ok=True)
-            os.makedirs(self.quarantine_dir, exist_ok=True)
-            logger.info(f"MockFSM initialized. Working: {self.working_dir}")
-
-        def get_study_path(self, study_instance_uid):
-            return os.path.join(self.working_dir, f"UID_{study_instance_uid}")
-
-        def quarantine_study(self, study_instance_uid, reason):
-            quarantine_path = os.path.join(self.quarantine_dir, f"UID_{study_instance_uid}")
-            # shutil.move(self.get_study_path(study_instance_uid), quarantine_path) # If moving
-            logger.warning(f"MOCK: Quarantining study {study_instance_uid} to {quarantine_path} due to: {reason}")
-        
-        def cleanup_study_directory(self, study_instance_uid):
-            # shutil.rmtree(self.get_study_path(study_instance_uid)) # If cleaning up
-            logger.info(f"MOCK: Cleaning up study directory for {study_instance_uid}")
-
-    mock_fsm = MockFSM(test_config)
-    processor = StudyProcessor(test_config, mock_fsm)
-
-    logger.info("StudyProcessor initialized for test. To run a specific test case, create data and call process_study.")
-    logger.info(f"Test logs will be in {test_config["directories"]["logs"]}")
-    logger.info(f"Test working files in {test_config["directories"]["working"]}")
-
-    # Example: Create a dummy study structure for a hypothetical test
-    # test_study_uid = "1.2.3.4.5.test"
-    # dummy_study_dir = mock_fsm.get_study_path(test_study_uid)
-    # dummy_dcm_dir = os.path.join(dummy_study_dir, "DCM")
-    # dummy_struct_dir = os.path.join(dummy_study_dir, "Structure")
-    # os.makedirs(dummy_dcm_dir, exist_ok=True)
-    # os.makedirs(dummy_struct_dir, exist_ok=True)
-    # # Create dummy files (these won\u2019t be valid DICOMs, just for path testing)
-    # # For a real test, use actual DICOM files.
-    # # with open(os.path.join(dummy_dcm_dir, "ct1.dcm"), "w") as f: f.write("dummy ct")
-    # # with open(os.path.join(dummy_struct_dir, "rtstruct.dcm"), "w") as f: f.write("dummy rtstruct")
-    # 
-    # logger.info(f"Attempting to process dummy study: {test_study_uid}. This will likely fail due to dummy data and unrefactored legacy modules.")
-    # # processor.process_study(test_study_uid)
-

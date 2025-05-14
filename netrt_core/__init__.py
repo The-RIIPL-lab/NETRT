@@ -6,5 +6,5 @@ This package contains the core modules for the NETRT application,
 refactored for improved modularity and maintainability.
 """
 
-__version__ = "0.3.0" # Placeholder for new version after refactoring
+__version__ = "0.3.0"
 

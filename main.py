@@ -1,8 +1,5 @@
-# Main application entry point
-
 import os
 import sys
-import time
 import logging
 import argparse
 
@@ -14,8 +11,7 @@ from netrt_core.logging_setup import setup_logging, TRANSACTION_LOGGER_NAME
 from netrt_core.file_system_manager import FileSystemManager
 from netrt_core.dicom_listener import DicomListener
 from netrt_core.study_processor import StudyProcessor
-# Import other necessary utilities if they are directly called or configured from main
-# e.g., from ip_validation import load_valid_networks, is_ip_valid
+
 
 logger = logging.getLogger(__name__) # Main application logger
 transaction_logger = logging.getLogger(TRANSACTION_LOGGER_NAME)
@@ -39,16 +35,7 @@ def main():
     # The study_processor_callback will be passed to FileSystemManager, 
     # which in turn passes it to its NewStudyEventHandler.
     # This callback needs to be a method of an initialized StudyProcessor instance.
-
-    # Initialize FileSystemManager first, as StudyProcessor might need it (though not directly in current constructor)
-    # and DicomListener needs it.
-    # The FileSystemManager will also need the study_processor_callback later if using watchdog.
     
-    # Placeholder for the actual study processing function that FSM will call
-    # This needs to be carefully designed to avoid circular dependencies at init time
-    # or to pass the processor instance later.
-    
-    # Solution: Instantiate StudyProcessor, then pass its method to FSM.
     study_processor_instance = StudyProcessor(config, None) # FSM not strictly needed by SP constructor for now
 
     file_system_manager = FileSystemManager(config, study_processor_instance.process_study)
@@ -65,23 +52,6 @@ def main():
     # 4. Start Services
     # Start file system watcher first if it runs in a separate thread
     file_system_manager.start_watching() 
-
-    # Start DICOM listener (this might be blocking depending on implementation)
-    # The DicomListener.start() method in the example was blocking.
-    # If it needs to run in parallel with the watcher, one must be in a thread.
-    # For Docker, a single blocking process is often fine if it handles signals.
-    
-    # For graceful shutdown:
-    # import signal
-    # def signal_handler(sig, frame):
-    #     logger.info("Shutdown signal received. Stopping services...")
-    #     dicom_listener.stop() # Assuming DicomListener has a stop method that releases the server
-    #     file_system_manager.stop_watching()
-    #     logger.info("NETRT Application stopped.")
-    #     sys.exit(0)
-
-    # signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C
-    # signal.signal(signal.SIGTERM, signal_handler) # Handle `docker stop`
 
     try:
         logger.info(f"Starting DICOM listener on {dicom_listener.host}:{dicom_listener.port} AE: {dicom_listener.ae_title}")
