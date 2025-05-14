@@ -57,10 +57,10 @@ def main():
     dicom_listener = DicomListener(
         host=config.get("dicom_listener", {}).get("host", "0.0.0.0"),
         port=config.get("dicom_listener", {}).get("port", 11112),
-        ae_title=config.get("dicom_listener", {}).get("ae_title", "NETRTCORE"),
+        ae_title=config.get("dicom_listener", {}).get("ae_title", "CNCT"),
         study_processor_callback=study_processor_instance.process_study, # This callback is for the listener itself (e.g. on connection close)
         file_system_manager=file_system_manager,
-        config=config # Pass full config for listener to access negotiated_transfer_syntax settings
+        #config=config # Pass full config for listener to access negotiated_transfer_syntax settings
     )
 
     # 4. Start Services
