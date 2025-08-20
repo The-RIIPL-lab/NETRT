@@ -15,11 +15,34 @@ dicom_destination:
   ae_title: RADIORIIPL
 
 processing:
-  # Text to use for burn-in watermarks
-  burn_in_text: "FOR RESEARCH USE ONLY - Not for clinical use"
+  # A list of case-insensitive substrings. Contours with names containing these will be ignored.
   ignore_contour_names_containing: ["skull"]
-  default_series_description: "Research CT with Contour Overlay"
-  default_series_number: 9901
+  
+  # --- Overlay Series Settings ---
+  # The Series Number to assign to the new series with contour overlays.
+  overlay_series_number: 98
+  # The Series Description for the new overlay series.
+  overlay_series_description: "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
+  # The Study ID to assign to the new overlay series.
+  overlay_study_id: "RTPlanShare"
+
+  # --- Burn-In Settings ---
+  # Whether to add a text disclaimer burned into the pixel data of the overlay series.
+  add_burn_in_disclaimer: true
+  # The text to use for the burn-in disclaimer.
+  burn_in_text: "FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE"
+
+  # --- Segmentation Series Settings (if enabled via feature_flags) ---
+  # The Series Number to assign to new DICOM SEG objects.
+  segmentation_series_number: 99
+  # A template for the Series Description of new SEG objects. {} is replaced with the contour name.
+  segmentation_series_description_template: "RESEARCH USE ONLY: CONTOUR {}"
+  # The name of the algorithm used for segmentation.
+  segmentation_algorithm_name: "Radiation Oncologist"
+  # The version of the algorithm used for segmentation.
+  segmentation_algorithm_version: "v1.0"
+  # The tracking ID for the segmentation.
+  segmentation_tracking_id: "FOR RESEARCH USE ONLY"
 
 anonymization:
   enabled: true

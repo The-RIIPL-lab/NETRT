@@ -1,6 +1,9 @@
 import hashlib
 import logging
 import pydicom
+import tempfile
+import os
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +169,24 @@ class DicomAnonymizer:
                 dicom_obj.PatientID = ""
         
         return dicom_obj
+
+    def anonymize_file(self, filepath):
+        """Anonymize a single DICOM file in place, using a temporary file for safety."""
+        try:
+            ds = pydicom.dcmread(filepath)
+            anonymized_ds = self.anonymize(ds)
+
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(filepath), prefix=".tmp-")
+            anonymized_ds.save_as(temp_path, enforce_file_format=True)
+            os.close(temp_fd)
+
+            shutil.move(temp_path, filepath)
+            logger.debug(f"Successfully anonymized and replaced {filepath}")
+        except Exception as e:
+            logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
     
     def _generate_patient_id(self):
         """Generate a random patient ID for full anonymization"""

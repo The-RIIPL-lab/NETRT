@@ -57,9 +57,16 @@ DEFAULT_CONFIG = {
     },
    "processing": {
         "ignore_contour_names_containing": ["skull"],
-        "default_series_description": "Processed DicomRT with Overlay",
-        "default_series_number": 9901,
-        "burn_in_text": "RESEARCH IMAGE - Not for diagnostic purpose"  # Add this line
+        "add_burn_in_disclaimer": True,
+        "burn_in_text": "FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE",
+        "overlay_series_number": 98,
+        "overlay_series_description": "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask",
+        "overlay_study_id": "RTPlanShare",
+        "segmentation_series_number": 99,
+        "segmentation_series_description_template": "RESEARCH USE ONLY: CONTOUR {}",
+        "segmentation_algorithm_name": "Radiation Oncologist",
+        "segmentation_algorithm_version": "v1.0",
+        "segmentation_tracking_id": "FOR RESEARCH USE ONLY"
     },
     "watcher": {
         "debounce_interval_seconds": 5,

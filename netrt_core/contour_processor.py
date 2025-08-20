@@ -1,173 +1,144 @@
 import os
+import logging
+import re
+import datetime
 import numpy as np
 import pydicom
-from rt_utils import RTStructBuilder
+from pydicom import dcmread, uid
+from pydicom.tag import Tag
 from pydicom.pixels import pack_bits
-import datetime
-import logging
-
-# Assuming DicomAnonymizer is refactored and available if needed, or its logic integrated/called from study_processor
-# from .dicom_anonymizer import DicomAnonymizer # Example if it becomes part of the core package
+from rt_utils import RTStructBuilder
 
 logger = logging.getLogger(__name__)
 
 class ContourProcessor:
+    """Processes RTSTRUCT files to create a new series with contour overlays."""
+
     def __init__(self, config):
-        self.config = config
+        """
+        Initializes the ContourProcessor.
+
+        Args:
+            config (dict): The application configuration dictionary.
+        """
         self.processing_config = config.get("processing", {})
-        self.anonymization_config = config.get("anonymization", {})
-        # self.anonymizer = DicomAnonymizer(self.anonymization_config) # If anonymizer is used here
 
-    def _generate_uid(self, prefix=None):
-        """Generates a DICOM UID, optionally with a prefix."""
-        # In future, a registered organizational root UID prefix should be used here.
-        # For now, pydicom's default generation is used.
-        if prefix:
-            return pydicom.uid.generate_uid(prefix=prefix)
-        return pydicom.uid.generate_uid()
+    def run(self, dcm_path, struct_path, output_path):
+        """
+        Executes the full contour processing pipeline.
 
-    def process_study_for_contours(
-        self, 
-        dcm_path, 
-        struct_path, 
-        output_addition_path,
-        original_study_uid, # Preserve original StudyInstanceUID
-        original_for_uid    # Preserve original FrameOfReferenceUID
-    ):
-        """Processes DICOM images and RTStruct to add merged contours as overlays."""
+        Args:
+            dcm_path (str): Path to the directory with original DICOM images.
+            struct_path (str): Path to the RTSTRUCT file.
+            output_path (str): Path to the directory to save the new series.
+        
+        Returns:
+            bool: True if processing was successful, False otherwise.
+        """
         try:
-            rtstruct_builder = RTStructBuilder.create_from(
+            os.makedirs(output_path, exist_ok=True)
+            rt_struct = RTStructBuilder.create_from(
                 dicom_series_path=dcm_path,
                 rt_struct_path=struct_path
             )
+            mask = self._create_merged_mask(rt_struct)
+            self._create_overlay_series(dcm_path, mask, output_path)
+            return True
         except Exception as e:
-            logger.error(f"Failed to load RTStruct or DICOM series: {e}", exc_info=True)
+            logger.error(f"Failed during contour processing: {e}", exc_info=True)
             return False
 
-        all_roi_names = rtstruct_builder.get_roi_names()
-        logger.info(f"Available ROIs: {all_roi_names}")
-
-        ignore_keywords = [kw.lower() for kw in self.processing_config.get("ignore_contour_names_containing", ["skull"])]
+    def _create_merged_mask(self, rt_struct):
+        """Merges specified ROI contours into a single binary 3D mask."""
+        all_rois = rt_struct.get_roi_names()
+        ignore_terms = self.processing_config.get("ignore_contour_names_containing", ["skull"])
+        rois_to_process = [r for r in all_rois if not any(term.lower() in r.lower() for term in ignore_terms)]
         
-        rois_to_process = []
-        ignored_rois = []
-        for roi_name in all_roi_names:
-            if any(keyword in roi_name.lower() for keyword in ignore_keywords):
-                ignored_rois.append(roi_name)
-            else:
-                rois_to_process.append(roi_name)
-        
-        if ignored_rois:
-            logger.info(f"Ignored ROIs based on keywords {ignore_keywords}: {ignored_rois}")
+        logger.info(f"Original ROIs found: {all_rois}")
+        logger.info(f"Ignoring contours containing: {ignore_terms}")
+        logger.info(f"ROIs to be merged into mask: {rois_to_process}")
 
         if not rois_to_process:
-            logger.warning("No ROIs left to process after filtering. No overlay will be generated.")
-            return True # Successfully processed by doing nothing with contours
+            raise ValueError("No contours left to process after filtering.")
 
-        if len(rois_to_process) > 1:
-            logger.warning(f"Multiple non-ignored ROIs found: {rois_to_process}. They will be merged into a single binary mask.")
-        else:
-            logger.info(f"Processing ROI: {rois_to_process[0]}")
+        # Initialize a blank mask with the shape of the 3D image volume
+        base_mask = rt_struct.get_roi_mask_by_name(rois_to_process[0])
+        merged_mask = np.zeros_like(base_mask, dtype=bool)
 
-        # Combine masks
-        combined_mask_3d = None
-        for i, roi_name in enumerate(rois_to_process):
+        for roi in rois_to_process:
             try:
-                roi_mask_3d = rtstruct_builder.get_roi_mask_by_name(roi_name)
-                if combined_mask_3d is None:
-                    combined_mask_3d = roi_mask_3d
-                else:
-                    combined_mask_3d = np.logical_or(combined_mask_3d, roi_mask_3d)
+                mask_3d = rt_struct.get_roi_mask_by_name(roi)
+                merged_mask = np.logical_or(merged_mask, mask_3d)
             except Exception as e:
-                logger.error(f"Error getting or combining mask for ROI 	{roi_name}	: {e}", exc_info=True)
-                # Decide if we should skip this ROI or fail the study
-                continue # Skip this problematic ROI
+                logger.warning(f"Could not get mask for ROI '{roi}'. Skipping. Error: {e}")
         
-        if combined_mask_3d is None:
-            logger.error("Failed to generate any mask data from the selected ROIs.")
-            return False
+        return np.flip(merged_mask, axis=2) # Flip mask to match slice order
 
-        combined_mask_3d = np.where(combined_mask_3d > 0, 1, 0) # Ensure binary
-        # Original code had a flip: combined_mask_3d = np.flip(combined_mask_3d, axis=2)
-        # This flip needs to be verified if it's necessary for correct orientation.
-        # Assuming it is for now, based on original code.
-        # TODO: Verify necessity of this flip. It depends on how rt-utils orients masks vs pydicom pixel data.
-        combined_mask_3d = np.flip(combined_mask_3d, axis=2)
-
-        # --- Create new DICOM series with this merged overlay ---
-        os.makedirs(output_addition_path, exist_ok=True)
-        source_dicom_files = sorted(
-            [os.path.join(dcm_path, f) for f in os.listdir(dcm_path) if f.endswith(".dcm")],
-            key=lambda x: pydicom.dcmread(x, stop_before_pixels=True).InstanceNumber
-        )
-
-        new_series_instance_uid = self._generate_uid() # UID for the new overlay series
-        default_series_desc = self.processing_config.get("default_series_description", "Processed DicomRT with Overlay")
-        default_series_num = self.processing_config.get("default_series_number", 9901)
-
-        for i, dcm_file_path in enumerate(source_dicom_files):
+    def _sort_dicom_files(self, dcm_path):
+        """Sorts DICOM files in a directory by InstanceNumber."""
+        files = [f for f in os.listdir(dcm_path) if f.lower().endswith('.dcm')]
+        
+        def get_sort_key(filename):
             try:
-                ds = pydicom.dcmread(dcm_file_path)
-                
-                # Preserve original study and patient identifiers by default
-                # Anonymization should be a separate step if enabled
-                ds.StudyInstanceUID = original_study_uid
-                ds.FrameOfReferenceUID = original_for_uid
+                return int(re.findall(r'\d+', filename)[-1])
+            except (IndexError, ValueError):
+                try:
+                    full_path = os.path.join(dcm_path, filename)
+                    dcm = dcmread(full_path, stop_before_pixels=True)
+                    return dcm.InstanceNumber
+                except Exception as e:
+                    logger.warning(f"Could not determine sort key for {filename}: {e}. It will be sorted last.")
+                    return float('inf')
 
-                # New Series and SOP Instance UIDs
-                ds.SeriesInstanceUID = new_series_instance_uid
-                ds.SOPInstanceUID = self._generate_uid(prefix=ds.SOPClassUID.replace("Storage","").replace(".","_X_")) # Generate new SOPInstanceUID, prefix can be based on SOPClass
-                ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
-                ds.file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID # Use pydicom's UID
-                ds.file_meta.ImplementationVersionName = "NETRT_CORE_0.3"
+        files.sort(key=get_sort_key)
+        return files
 
-                # Update Series information
-                ds.SeriesDescription = default_series_desc
-                ds.SeriesNumber = default_series_num
-                # ds.Modality should be preserved from original, SOPClassUID too.
-
-                # Update Dates/Times for derived instance
-                now = datetime.datetime.now()
-                ds.SeriesDate = now.strftime("%Y%m%d")
-                ds.SeriesTime = now.strftime("%H%M%S.%f")[:16]
-                ds.ContentDate = now.strftime("%Y%m%d")
-                ds.ContentTime = now.strftime("%H%M%S.%f")[:16]
-                ds.InstanceCreationDate = now.strftime("%Y%m%d")
-                ds.InstanceCreationTime = now.strftime("%H%M%S.%f")[:16]
-                # AcquisitionDate/Time should typically be preserved from original
-
-                # Add the single merged overlay
-                slice_index = i # Assuming files are sorted correctly by slice
-                if slice_index < combined_mask_3d.shape[2]:
-                    mask_slice = combined_mask_3d[:, :, slice_index]
-                    if np.any(mask_slice):
-                        packed_bytes = pack_bits(mask_slice)
-                        # Overlay group 0x6000 (can choose any even group from 0x6000-0x601E)
-                        # Ensure existing overlays are removed if any, or use a different group
-                        # For simplicity, assuming we add to 0x6000 and it's fresh.
-                        overlay_group_hex = 0x6000 
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0010), "US", ds.Rows) # Overlay Rows
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0011), "US", ds.Columns) # Overlay Columns
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0015), "IS", "1") # Number of Frames in Overlay
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0022), "LO", "Merged ROI Overlay") # Overlay Description
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0040), "CS", "R")  # Overlay Type (Region of Interest)
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0050), "SS", [1, 1]) # Overlay Origin (top left pixel)
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0100), "US", 1)  # Overlay Bits Allocated (1 for binary)
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0102), "US", 0)  # Overlay Bit Position (0 for binary)
-                        # ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x0200), 'US', 0) # Overlay Activation Layer - Optional
-                        ds.add_new(pydicom.tag.Tag(overlay_group_hex, 0x3000), "OW", packed_bytes) # Overlay Data
-                    else:
-                        logger.debug(f"Slice {slice_index} has no overlay data after merging.")
-                else:
-                    logger.warning(f"Slice index {slice_index} out of bounds for combined mask shape {combined_mask_3d.shape}")
-                    
-                output_filename = os.path.join(output_addition_path, f"overlay_{ds.SOPInstanceUID}.dcm")
-                ds.save_as(output_filename, enforce_file_format=True)
-                logger.info(f"Saved DICOM with merged overlay: {output_filename}")
-
-            except Exception as e:
-                logger.error(f"Error processing or saving DICOM slice {dcm_file_path}: {e}", exc_info=True)
-                # Potentially skip this slice or fail the entire study processing
-                return False # Indicate failure for the study
+    def _create_overlay_series(self, dcm_path, mask_3d, output_path):
+        """Creates a new DICOM series with the provided mask as an overlay."""
+        sorted_files = self._sort_dicom_files(dcm_path)
+        new_series_uid = uid.generate_uid()
         
-        return True # Indicate success for the study
+        for i, filename in enumerate(sorted_files):
+            ds = dcmread(os.path.join(dcm_path, filename))
+            if not hasattr(ds, 'SliceLocation'):
+                logger.debug(f"Skipping file {filename} as it has no SliceLocation.")
+                continue
+
+            new_ds = self._add_overlay_to_slice(ds, mask_3d[:, :, i], new_series_uid)
+            output_filename = os.path.join(output_path, f"OVERLAY-{filename}")
+            new_ds.save_as(output_filename, enforce_file_format=True)
+        logger.info(f"Successfully created {len(sorted_files)} files in new overlay series.")
+
+    def _add_overlay_to_slice(self, ds, mask_slice, series_uid):
+        """Adds a single overlay plane to a pydicom dataset."""
+        # These tags are modified for the new series
+        ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.2' # CT Image Storage
+        ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+        ds.SOPInstanceUID = uid.generate_uid()
+        ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
+        ds.SeriesInstanceUID = series_uid
+
+        # Set new series attributes from config
+        ds.SeriesNumber = self.processing_config.get("overlay_series_number", 98)
+        ds.SeriesDescription = self.processing_config.get("overlay_series_description", "Contour Overlay")
+        ds.StudyID = self.processing_config.get("overlay_study_id", "RTPlanShare")
+
+        # Update date and time to current
+        now = datetime.datetime.now()
+        ds.ContentDate = now.strftime('%Y%m%d')
+        ds.ContentTime = now.strftime('%H%M%S.%f')
+        ds.SeriesDate = now.strftime('%Y%m%d')
+        ds.SeriesTime = now.strftime('%H%M%S.%f')
+
+        # Add overlay data
+        overlay_group = 0x6000
+        ds.add_new(Tag(overlay_group, 0x0010), 'US', ds.Rows)
+        ds.add_new(Tag(overlay_group, 0x0011), 'US', ds.Columns)
+        ds.add_new(Tag(overlay_group, 0x0015), 'IS', '1') # Number of Frames in Overlay
+        ds.add_new(Tag(overlay_group, 0x0040), 'CS', 'R') # ROI Area
+        ds.add_new(Tag(overlay_group, 0x0050), 'SS', [ds.Rows // 2, ds.Columns // 2]) # Overlay Origin
+        ds.add_new(Tag(overlay_group, 0x0100), 'US', 1) # Bits Allocated
+        ds.add_new(Tag(overlay_group, 0x0102), 'US', 0) # Bit Position
+        ds.add_new(Tag(overlay_group, 0x3000), 'OW', pack_bits(mask_slice))
+
+        return ds
