@@ -3,6 +3,8 @@ import pydicom
 import numpy as np
 import cv2
 import copy
+import tempfile
+import shutil
 
 
 class Add_Burn_In:
@@ -91,8 +93,20 @@ class Add_Burn_In:
         # Assign the new pixel data to the new DICOM dataset
         new_dcm.PixelData = new_pixel_data
     
-        # Write the new DICOM dataset to a file
-        pydicom.dcmwrite(input_filename, new_dcm, enforce_file_format=True)
+        # Write the new DICOM dataset to a temporary file first
+        try:
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(input_filename), prefix=".tmp-")
+            pydicom.dcmwrite(temp_path, new_dcm, enforce_file_format=True)
+            os.close(temp_fd)
+            
+            # Replace the original file with the watermarked one
+            shutil.move(temp_path, input_filename)
+        except Exception as e:
+            print(f"ERROR: Could not write watermarked file {input_filename}: {e}")
+            # If temp file exists, clean it up
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
         
     def apply_watermarks(self):
         for dicom_file in self.dicom_filepaths:

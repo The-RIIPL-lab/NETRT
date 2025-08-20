@@ -215,7 +215,28 @@ class ContourAddition:
         slices = []
         skipcount = 0
         
-        files.sort(key=lambda x: int(re.findall(r'\d+', x)[-1]))
+        def get_sort_key(filename):
+            """
+            Determines the sort key for a DICOM file.
+            Tries to extract the last integer from the filename. If that fails,
+            it reads the DICOM file and uses the InstanceNumber tag.
+            """
+            try:
+                # Primary method: extract the last integer from the filename.
+                return int(re.findall(r'\d+', filename)[-1])
+            except (IndexError, ValueError):
+                # Fallback method: read the InstanceNumber from the DICOM header.
+                print(f"Could not find slice number in filename '{filename}', falling back to DICOM header.")
+                try:
+                    full_path = os.path.join(self.dcm_path, filename)
+                    dcm = dcmread(full_path, stop_before_pixels=True)
+                    return dcm.InstanceNumber
+                except Exception as e:
+                    # If DICOM header reading fails, return a large number to sort it last.
+                    print(f"Could not read DICOM header for {filename}: {e}. It will be sorted last.")
+                    return float('inf')
+
+        files.sort(key=get_sort_key)
         print("file count: {}".format(len(files)))
 
         #SeriesInstanceUID = pydicom.uid.generate_uid() # defined for the whole scan series

@@ -3,6 +3,8 @@ import logging
 import pydicom
 import random
 import time
+import tempfile
+import shutil
 from DicomAnonymizer import DicomAnonymizer
 import Contour_Addition
 import Add_Burn_In
@@ -220,30 +222,37 @@ class StudyProcessor:
             else:
                 logger.info("Anonymization is disabled. Only AccessionNumber will be removed.")
                 
+            def _safe_anonymize_file(filepath):
+                """Reads a DICOM file, anonymizes it, and saves it safely."""
+                try:
+                    ds = pydicom.dcmread(filepath)
+                    self.anonymizer.anonymize(ds)
+                    
+                    # Write to a temporary file first
+                    temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(filepath), prefix=".tmp-")
+                    ds.save_as(temp_path)
+                    os.close(temp_fd)
+                    
+                    # Replace the original file with the anonymized one
+                    shutil.move(temp_path, filepath)
+                    logger.debug(f"Anonymized and saved: {filepath}")
+                except Exception as e:
+                    logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
+                    # If temp file exists, clean it up
+                    if 'temp_path' in locals() and os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    raise # Re-raise the exception to be caught by the main try-except block
+
             # Process all DICOM files in the DCM directory
             for root, _, files in os.walk(dcm_path):
                 for filename in files:
                     if filename.lower().endswith(".dcm"):
-                        filepath = os.path.join(root, filename)
-                        try:
-                            # Read, anonymize, and save each file in place
-                            ds = pydicom.dcmread(filepath)
-                            self.anonymizer.anonymize(ds)
-                            ds.save_as(filepath)
-                            logger.debug(f"Anonymized and saved: {filepath}")
-                        except Exception as e:
-                            logger.error(f"Failed to anonymize file {filepath}: {e}", exc_info=True)
+                        _safe_anonymize_file(os.path.join(root, filename))
             
             # Process the RTSTRUCT file if it exists
             if struct_file_path:
-                try:
-                    # Read, anonymize, and save the RTSTRUCT file
-                    ds_struct = pydicom.dcmread(struct_file_path)
-                    self.anonymizer.anonymize(ds_struct)
-                    ds_struct.save_as(struct_file_path)
-                    logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
-                except Exception as e:
-                    logger.error(f"Failed to anonymize RTSTRUCT file {struct_file_path}: {e}", exc_info=True)
+                _safe_anonymize_file(struct_file_path)
+                logger.info(f"Anonymized and saved RTSTRUCT: {struct_file_path}")
 
             # ---- Contour Addition ----
             if struct_file_path:
