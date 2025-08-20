@@ -1,66 +1,78 @@
-# NETRT - Networked DICOM RT-Structure Processing Tool
+# NETRT - DICOM RT Structure Processor
 
-## Overview
+NETRT is a service that listens for DICOM studies on a network port, automatically processes them to generate contour overlays from RT Structure Sets, and sends the newly created DICOM series to a specified destination.
 
-NETRT is a lightweight Python application designed to receive DICOM files (including RT Structure sets) on a network port, process them to extract contour data, and export new DICOM series with contour masks applied to the overlay plane of the structural images. The tool aims to be flexible and easily configurable for use in research and collaborative environments.
+It is designed to run continuously as a background service, making it ideal for automated research workflows. The recommended deployment method is using Docker.
 
-This version includes significant refactoring and enhancements from Round 1 and Round 2 development phases, focusing on modularity, configurability, improved logging, and user-requested features.
+## Key Features
 
-## Key Features (Post Round 2)
+- **DICOM Listener**: Receives DICOM studies over the network.
+- **Automated Processing**: Extracts contour data from RTSTRUCT files, merges them into a single binary mask, and creates a new DICOM series with the mask as a graphical overlay.
+- **Configurable**: All operational parameters (ports, AE titles, directories, processing options) are managed via a single `config.yaml` file.
+- **Anonymization**: Built-in tools to anonymize DICOM data, with both "full" and "partial" modes available.
+- **Logging**: Maintains detailed application and transaction logs for monitoring and debugging.
+- **Deployment Ready**: Includes a `Dockerfile` and `docker-compose.yml` for easy and consistent deployment.
 
--   **DICOM Listener**: Receives DICOM studies over the network using pynetdicom.
--   **Modular Core**: Refactored codebase into a `netrt_core` package with distinct modules for listening, study processing, file system management, configuration, logging, and contour processing.
--   **Configurable Anonymization**: 
-    -   Anonymization can be globally enabled/disabled.
-    -   Supports both "full" and "partial" (default) anonymization modes, controlled via `config.yaml`.
-    -   Partial mode defaults to removing only `AccessionNumber` and `PatientID`.
-    -   Full mode applies extensive rules for tag removal, blanking, date/time modification, and UID regeneration.
-    -   No "RT_" prefix is added to patient identifiers by default.
--   **Detailed Transaction Logging**: A separate transaction log (`transaction.log`) captures key events for each study, including source IP, StudyInstanceUID, destination details, and timestamps for reception, processing, and sending events.
--   **External Configuration**: All major operational parameters are managed through an external `config.yaml` file. See [CONFIGURATION.md](CONFIGURATION.md) for details.
--   **Directory Management**: Configurable directories for working files, logs, and quarantined studies.
--   **Event-Based File System Monitoring**: Uses `watchdog` for efficient detection of incoming studies.
--   **Contour Processing**: 
-    -   Extracts contour data from DICOM RTSTRUCT files (leveraging `rt-utils`).
-    -   Ignores specified contours (e.g., "skull", "patient_outline") based on configuration.
-    -   Merges multiple non-ignored contours into a single binary mask.
-    -   Exports new DICOM series with the contour mask in the overlay plane.
-    -   (Legacy modules `Contour_Addition.py`, `Add_Burn_In.py`, `Segmentations.py` are still part of the processing pipeline but are targeted for future refactoring).
--   **DICOM Sending**: Sends processed DICOM series to a configured destination PACS/server.
--   **Deployment Options**:
-    -   **Docker**: Recommended for deployment. A `Dockerfile` is provided for building a containerized application. See [DEPLOYMENT.md](DEPLOYMENT.md).
-    -   **Systemd**: An example systemd service unit file (`netrt.service.example`) is provided for running the application as a service on Linux hosts. See [DEPLOYMENT.md](DEPLOYMENT.md).
+## Quick Start (Docker)
 
-## Getting Started
+This is the recommended method for running NETRT.
 
-1.  **Configuration**: Create or customize your `config.yaml` file. Refer to [CONFIGURATION.md](CONFIGURATION.md).
-2.  **Deployment**: Choose your deployment method (Docker or systemd) and follow the instructions in [DEPLOYMENT.md](DEPLOYMENT.md).
+### Prerequisites
 
-## Code Structure
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
 
--   `main.py`: Main application entry point.
--   `netrt_core/`: Core application logic modules.
-    -   `config_loader.py`: Loads and manages `config.yaml`.
-    -   `logging_setup.py`: Configures application and transaction logging.
-    -   `dicom_listener.py`: Handles incoming DICOM C-STORE operations.
-    -   `file_system_manager.py`: Manages study directories and monitors for new files.
-    -   `study_processor.py`: Orchestrates the processing pipeline for each study.
-    -   `contour_processor.py`: (Intended for refactored contour logic - current processing still relies heavily on legacy scripts).
--   `DicomAnonymizer.py`: Class for DICOM anonymization based on configuration.
--   `Contour_Addition.py`, `Add_Burn_In.py`, `Segmentations.py`, `Send_Files.py`, `ip_validation.py`: Legacy scripts integrated into the workflow, pending further refactoring.
--   `tests/`: Unit and integration tests.
--   `Dockerfile`: For building the Docker image.
--   `netrt.service.example`: Example systemd unit file.
--   `requirements.txt`: Python dependencies.
+### Steps
 
-## Further Development (Round 3 and Beyond)
+1.  **Clone the Repository**
 
--   Refactor legacy processing scripts (`Contour_Addition.py`, etc.) into the `netrt_core` structure.
--   Implement multi-planar contour overlay exports (Axial, Coronal, Sagittal).
--   Advanced performance optimizations and parallel processing if needed.
--   Expand unit and integration test coverage.
+    ```bash
+    git clone <repository_url>
+    cd NETRT
+    ```
 
-## Contributing
+2.  **Configure the Application**
 
-Contributions and feedback are welcome. Please refer to the project repository for issue tracking and contribution guidelines.
+    Edit the `config.yaml` file to match your environment. You will need to set the correct IP addresses, ports, and AE titles for your DICOM listener and destination.
 
+3.  **Create Data Directories**
+
+    The `docker-compose.yml` file is configured to use a local `netrt_data` directory. Create it now:
+
+    ```bash
+    mkdir -p netrt_data/working netrt_data/logs
+    ```
+
+4.  **Build and Run the Container**
+
+    Use Docker Compose to build the image and run the service in the background:
+
+    ```bash
+    docker-compose up --build -d
+    ```
+
+5.  **Verify the Service**
+
+    Check the logs to ensure the service started correctly:
+
+    ```bash
+    docker-compose logs -f
+    ```
+
+    You should see messages indicating that the DICOM listener has started.
+
+6.  **Stopping the Service**
+
+    To stop the application, run:
+
+    ```bash
+    docker-compose down
+    ```
+
+## Further Information
+
+For more detailed information on configuration, architecture, and advanced usage, please see the following documents:
+
+-   **[DETAILS.md](DETAILS.md)**: In-depth explanation of the application's workflow, components, and a data flow diagram.
+-   **[CONFIGURATION.md](CONFIGURATION.md)**: A complete reference for all options in the `config.yaml` file.
+-   **[DEPLOYMENT.md](DEPLOYMENT.md)**: Instructions for alternative deployment methods, such as using systemd.

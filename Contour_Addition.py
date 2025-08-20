@@ -104,7 +104,7 @@ class ContourAddition:
         files = os.listdir(self.dcm_path)
 
         # Create Overlay layer function
-        output_directory = os.path.abspath(self.dcm_path).replace('DCM', 'Addition')
+        output_directory = os.path.join(os.path.dirname(os.path.abspath(self.dcm_path)), 'Addition')
 
         if os.path.isdir(output_directory) == False:
             os.mkdir(output_directory)
