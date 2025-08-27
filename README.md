@@ -48,19 +48,19 @@ NETRT is a DICOM service that automatically processes RT Structure Sets to creat
 
 4. **Deploy**
    ```bash
-   docker-compose up --build -d
+   docker compose up --build -d
    ```
 
 5. **Verify Operation**
    ```bash
-   docker-compose logs -f
+   docker compose logs -f
    ```
 
 ### Management
 
-- **View Logs**: `docker-compose logs -f`
-- **Stop Service**: `docker-compose down`
-- **Restart**: `docker-compose restart`
+- **View Logs**: `docker compose logs -f`
+- **Stop Service**: `docker compose down`
+- **Restart**: `docker compose restart`
 
 ## Configuration
 

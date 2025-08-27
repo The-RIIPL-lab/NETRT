@@ -32,17 +32,17 @@
 
 ### Docker Compose Deployment
 
-The provided `docker-compose.yml` file configures the complete environment:
+The provided `docker compose.yml` file configures the complete environment:
 
 ```bash
 # Build and start services
-docker-compose up --build -d
+docker compose up --build -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 ### Docker Run (Alternative)
@@ -69,13 +69,13 @@ docker run -d \
 
 **View Status**:
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 **Access Logs**:
 ```bash
 # Container logs
-docker-compose logs -f
+docker compose logs -f
 
 # Application logs (if volume mounted)
 tail -f /DATA/netrt_data/logs/application.log
@@ -84,7 +84,7 @@ tail -f /DATA/netrt_data/logs/transaction.log
 
 **Restart Service**:
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 ## Systemd Deployment (Linux Hosts)
@@ -189,10 +189,10 @@ sudo ufw allow out <destination_port>
 **Docker Environment**:
 ```bash
 # View recent application events
-docker-compose exec netrt tail -f /home/appuser/CNCT_logs/application.log
+docker compose exec netrt tail -f /home/appuser/CNCT_logs/application.log
 
 # Monitor transactions
-docker-compose exec netrt tail -f /home/appuser/CNCT_logs/transaction.log
+docker compose exec netrt tail -f /home/appuser/CNCT_logs/transaction.log
 ```
 
 **Systemd Environment**:
@@ -230,9 +230,9 @@ ls -la /DATA/netrt_data/working/quarantine
 **Update Application**:
 ```bash
 # Docker deployment
-docker-compose down
-docker-compose pull
-docker-compose up --build -d
+docker compose down
+docker compose pull
+docker compose up --build -d
 
 # Systemd deployment
 sudo systemctl stop netrt.service
