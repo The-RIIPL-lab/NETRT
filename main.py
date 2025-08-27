@@ -19,10 +19,12 @@ transaction_logger = logging.getLogger(TRANSACTION_LOGGER_NAME)
 def main():
     parser = argparse.ArgumentParser(description="NETRT DICOM Processing Application")
     parser.add_argument("--config", default="config.yaml", help="Path to the configuration file (default: config.yaml)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug visualization output") 
     args = parser.parse_args()
 
     # 1. Load Configuration
     config = load_config(args.config)
+    config['debug_mode'] = args.debug
 
     # 2. Setup Logging (must be done after config is loaded)
     setup_logging(config)
@@ -30,6 +32,8 @@ def main():
     logger.info("NETRT Application starting...")
     logger.info(f"Using configuration file: {os.path.abspath(args.config)}")
     logger.debug(f"Loaded configuration: {config}")
+    if config['debug_mode']:
+        logger.info(f"DEBUG mode is {config['debug_mode']}")
 
     # 3. Initialize Core Components
     # The study_processor_callback will be passed to FileSystemManager, 

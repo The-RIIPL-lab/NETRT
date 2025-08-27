@@ -1,7 +1,7 @@
 services:
   netrt:
     build: .
-    container_name: netrt_service
+    container_name: rabarcu/riipl_netrt:latest
     restart: unless-stopped
     ports:
       # Maps the host port (left) to the container port (right) for the DICOM listener.

@@ -51,6 +51,10 @@ processing:
   # The tracking ID for the segmentation.
   segmentation_tracking_id: "FOR RESEARCH USE ONLY"
 
+  # Debug visualization settings
+  debug_series_number: 101
+  ebug_series_description: "DEBUG: Contour Overlay Visualization"
+
 anonymization:
   enabled: true
   full_anonymization_enabled: false

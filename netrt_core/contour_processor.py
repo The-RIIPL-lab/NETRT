@@ -8,6 +8,9 @@ from pydicom import dcmread, uid
 from pydicom.tag import Tag
 from pydicom.pixels import pack_bits
 from rt_utils import RTStructBuilder
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.colors import ListedColormap
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +26,9 @@ class ContourProcessor:
         """
         self.processing_config = config.get("processing", {})
 
-    def run(self, dcm_path, struct_path, output_path):
+    def run(self, dcm_path, struct_path, output_path, debug_mode=False, study_uid=None):
         """
         Executes the full contour processing pipeline.
-
-        Args:
-            dcm_path (str): Path to the directory with original DICOM images.
-            struct_path (str): Path to the RTSTRUCT file.
-            output_path (str): Path to the directory to save the new series.
-        
-        Returns:
-            bool: True if processing was successful, False otherwise.
         """
         try:
             os.makedirs(output_path, exist_ok=True)
@@ -43,10 +38,18 @@ class ContourProcessor:
             )
             mask = self._create_merged_mask(rt_struct)
             self._create_overlay_series(dcm_path, mask, output_path)
-            return True
+            
+            debug_dicom_dir = None
+            if debug_mode:
+                # Create JPG debug images
+                self.save_debug_visualization(dcm_path, mask, os.path.dirname(output_path), study_uid or "UNKNOWN")
+                # Create DICOM debug series
+                debug_dicom_dir = self.create_debug_dicom_series(dcm_path, mask, os.path.dirname(output_path), study_uid or "UNKNOWN")
+            
+            return True, debug_dicom_dir  # Return debug dir path for sending
         except Exception as e:
             logger.error(f"Failed during contour processing: {e}", exc_info=True)
-            return False
+            return False, None
 
     def _create_merged_mask(self, rt_struct):
         """Merges specified ROI contours into a single binary 3D mask."""
@@ -142,3 +145,151 @@ class ContourProcessor:
         ds.add_new(Tag(overlay_group, 0x3000), 'OW', pack_bits(mask_slice))
 
         return ds
+    
+    def _create_secondary_capture_dicom(self, original_ds, rgb_array, series_uid, slice_index):
+        """Create a Secondary Capture DICOM from RGB image data."""
+        import copy
+        import datetime
+        
+        # Create a copy of the original dataset
+        new_ds = copy.deepcopy(original_ds)
+        
+        # Set Secondary Capture SOP Class
+        new_ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.7'  # Secondary Capture Image Storage
+        new_ds.file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.7'
+        
+        # Generate new UIDs
+        new_ds.SOPInstanceUID = uid.generate_uid()
+        new_ds.file_meta.MediaStorageSOPInstanceUID = new_ds.SOPInstanceUID
+        new_ds.SeriesInstanceUID = series_uid
+        
+        # Set series-level attributes
+        new_ds.SeriesNumber = self.processing_config.get("debug_series_number", 101)
+        new_ds.SeriesDescription = self.processing_config.get("debug_series_description", "DEBUG: Contour Overlay")
+        new_ds.Modality = "SC"  # Secondary Capture
+        
+        # Update dates/times
+        now = datetime.datetime.now()
+        new_ds.ContentDate = now.strftime('%Y%m%d')
+        new_ds.ContentTime = now.strftime('%H%M%S.%f')
+        new_ds.SeriesDate = now.strftime('%Y%m%d')
+        new_ds.SeriesTime = now.strftime('%H%M%S.%f')
+        
+        # Set image pixel data
+        new_ds.Rows, new_ds.Columns, _ = rgb_array.shape
+        new_ds.BitsAllocated = 8
+        new_ds.BitsStored = 8
+        new_ds.HighBit = 7
+        new_ds.SamplesPerPixel = 3  # RGB
+        new_ds.PhotometricInterpretation = 'RGB'
+        new_ds.PixelRepresentation = 0
+        new_ds.PlanarConfiguration = 0  # pixel interleaved (RGBRGBRGB...)
+        
+        # Convert RGB array to bytes (interleaved)
+        new_ds.PixelData = rgb_array.tobytes()
+        
+        # Update instance number
+        new_ds.InstanceNumber = slice_index + 1
+        
+        # Remove overlay data if present (since we're creating a new visualization)
+        overlay_tags = [tag for tag in new_ds.keys() if tag.group == 0x6000]
+        for tag in overlay_tags:
+            delattr(new_ds, tag)
+        
+        return new_ds
+    
+    def save_debug_visualization(self, dcm_path, mask_3d, output_dir, study_uid):
+        """Save debug JPG images showing the binary mask overlay on DICOM slices."""
+        debug_dir = os.path.join(output_dir, "debug_visualization")
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        sorted_files = self._sort_dicom_files(dcm_path)
+        logger.info(f"Creating debug visualization for {len(sorted_files)} slices in {debug_dir}")
+        
+        for i, filename in enumerate(sorted_files):
+            try:
+                # Read the original DICOM file
+                ds = pydicom.dcmread(os.path.join(dcm_path, filename))
+                if not hasattr(ds, 'SliceLocation') or i >= mask_3d.shape[2]:
+                    continue
+                
+                # Get the image data and normalize to 8-bit
+                img_data = ds.pixel_array
+                img_normalized = ((img_data - img_data.min()) / (img_data.max() - img_data.min()) * 255).astype(np.uint8)
+                
+                # Get the corresponding mask slice
+                mask_slice = mask_3d[:, :, i]
+                
+                # Create the visualization
+                fig, ax = plt.subplots(figsize=(10, 10))
+                ax.imshow(img_normalized, cmap='gray', alpha=1.0)
+                
+                # Overlay the mask as red contours
+                if np.any(mask_slice):
+                    contours = plt.contour(mask_slice, levels=[0.5], colors='red', linewidths=2)
+                    plt.clabel(contours, inline=True, fontsize=8)
+                
+                ax.set_title(f'Study: {study_uid}\nSlice {i+1}: {filename}\nMask Overlay (Red)')
+                ax.axis('off')
+                
+                # Save as JPG
+                jpg_filename = f"slice_{i+1:03d}_{filename.replace('.dcm', '.jpg')}"
+                jpg_path = os.path.join(debug_dir, jpg_filename)
+                plt.savefig(jpg_path, format='jpg', bbox_inches='tight', dpi=150)
+                plt.close()
+                
+            except Exception as e:
+                logger.warning(f"Could not create debug visualization for slice {i}: {e}")
+                continue
+        
+        logger.info(f"Debug visualization complete. Images saved to: {debug_dir}")
+
+    def create_debug_dicom_series(self, dcm_path, mask_3d, output_dir, study_uid):
+        """Create a DICOM Secondary Capture series from debug visualizations."""
+        debug_dicom_dir = os.path.join(output_dir, "DebugDicom")
+        os.makedirs(debug_dicom_dir, exist_ok=True)
+        
+        sorted_files = self._sort_dicom_files(dcm_path)
+        logger.info(f"Creating debug DICOM series for {len(sorted_files)} slices in {debug_dicom_dir}")
+        
+        new_series_uid = uid.generate_uid()
+        
+        for i, filename in enumerate(sorted_files):
+            try:
+                ds = pydicom.dcmread(os.path.join(dcm_path, filename))
+                if not hasattr(ds, 'SliceLocation') or i >= mask_3d.shape[2]:
+                    continue
+                
+                # Get the image data and normalize to 0-255
+                img_data = ds.pixel_array
+                img_normalized = ((img_data - img_data.min()) / (img_data.max() - img_data.min()) * 255).astype(np.uint8)
+                
+                # Get the corresponding mask slice
+                mask_slice = mask_3d[:, :, i]
+                
+                # Create RGB image directly using numpy and opencv
+                # Convert grayscale to RGB
+                rgb_image = np.stack([img_normalized, img_normalized, img_normalized], axis=-1)
+                
+                # Add red contour overlay where mask is True
+                if np.any(mask_slice):
+                    # Find contours using opencv
+                    import cv2
+                    mask_uint8 = (mask_slice * 255).astype(np.uint8)
+                    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    # Draw red contours
+                    cv2.drawContours(rgb_image, contours, -1, (255, 0, 0), thickness=1)  # Red in RGB
+                
+                # Create new DICOM dataset
+                new_ds = self._create_secondary_capture_dicom(ds, rgb_image, new_series_uid, i)
+                
+                # Save the DICOM file
+                output_filename = os.path.join(debug_dicom_dir, f"DEBUG-{filename}")
+                new_ds.save_as(output_filename, enforce_file_format=True)
+                
+            except Exception as e:
+                logger.warning(f"Could not create debug DICOM for slice {i}: {e}")
+                continue
+        
+        logger.info(f"Debug DICOM series created in: {debug_dicom_dir}")
+        return debug_dicom_dir

@@ -40,13 +40,21 @@ class StudyProcessor:
                 self._anonymize_study(dcm_path, struct_file)
 
             if struct_file:
-                if not self.contour_processor.run(dcm_path, struct_file, addition_path):
+                success, debug_dicom_dir = self.contour_processor.run(
+                    dcm_path, struct_file, addition_path, 
+                    self.config.get('debug_mode', False), study_instance_uid
+                )
+                if not success:
                     raise Exception("Contour processing failed")
 
                 if self.config.get("processing", {}).get("add_burn_in_disclaimer", True):
                     self.burn_in_processor.run(addition_path)
                 
                 self._send_directory(addition_path, "OVERLAY", study_instance_uid)
+                
+                # Send debug DICOM series if created
+                if debug_dicom_dir and os.path.exists(debug_dicom_dir):
+                    self._send_directory(debug_dicom_dir, "DEBUG", study_instance_uid)
             else:
                 logger.warning(f"No RTSTRUCT file found for study {study_instance_uid}. Nothing to process or send.")
 
