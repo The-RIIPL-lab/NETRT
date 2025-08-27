@@ -8,9 +8,11 @@ from pydicom import dcmread, uid
 from pydicom.tag import Tag
 from pydicom.pixels import pack_bits
 from rt_utils import RTStructBuilder
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import ListedColormap
+matplotlib.use('Agg')
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +254,7 @@ class ContourProcessor:
         sorted_files = self._sort_dicom_files(dcm_path)
         logger.info(f"Creating debug DICOM series for {len(sorted_files)} slices in {debug_dicom_dir}")
         
+        # Use non-interactive backend
         new_series_uid = uid.generate_uid()
         
         for i, filename in enumerate(sorted_files):
@@ -260,28 +263,42 @@ class ContourProcessor:
                 if not hasattr(ds, 'SliceLocation') or i >= mask_3d.shape[2]:
                     continue
                 
-                # Get the image data and normalize to 0-255
+                # Create the visualization with matplotlib (high quality)
                 img_data = ds.pixel_array
                 img_normalized = ((img_data - img_data.min()) / (img_data.max() - img_data.min()) * 255).astype(np.uint8)
-                
-                # Get the corresponding mask slice
                 mask_slice = mask_3d[:, :, i]
                 
-                # Create RGB image directly using numpy and opencv
-                # Convert grayscale to RGB
-                rgb_image = np.stack([img_normalized, img_normalized, img_normalized], axis=-1)
+                # Create figure with exact pixel dimensions for 1:1 mapping
+                dpi = 100
+                fig_width = img_data.shape[1] / dpi
+                fig_height = img_data.shape[0] / dpi
                 
-                # Add red contour overlay where mask is True
+                fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
+                ax.imshow(img_normalized, cmap='gray', alpha=1.0)
+                
                 if np.any(mask_slice):
-                    # Find contours using opencv
-                    import cv2
-                    mask_uint8 = (mask_slice * 255).astype(np.uint8)
-                    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    # Draw red contours
-                    cv2.drawContours(rgb_image, contours, -1, (255, 0, 0), thickness=1)  # Red in RGB
+                    # High quality matplotlib contours
+                    contours = ax.contour(mask_slice, levels=[0.5], colors='red', linewidths=1, alpha=0.6)
+                
+                ax.axis('off')
+                fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+                
+                # Robust method to get RGB array - works across matplotlib versions
+                from io import BytesIO
+                buf = BytesIO()
+                fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', pad_inches=0)
+                buf.seek(0)
+                
+                # Read back as RGB array using PIL (more reliable than canvas methods)
+                from PIL import Image
+                pil_img = Image.open(buf)
+                rgb_array = np.array(pil_img.convert('RGB'))
+                
+                plt.close(fig)  # Important: close the figure to free memory
+                buf.close()
                 
                 # Create new DICOM dataset
-                new_ds = self._create_secondary_capture_dicom(ds, rgb_image, new_series_uid, i)
+                new_ds = self._create_secondary_capture_dicom(ds, rgb_array, new_series_uid, i)
                 
                 # Save the DICOM file
                 output_filename = os.path.join(debug_dicom_dir, f"DEBUG-{filename}")
