@@ -1,103 +1,181 @@
-# NETRT In-Depth Details
+# NETRT Technical Details
 
-This document provides a detailed look into the architecture, workflow, and components of the NETRT application.
+## Processing Workflow
 
-## Application Workflow
+### Study Reception and Detection
 
-The NETRT service operates in a continuous loop, processing DICOM studies as they are received. The workflow can be broken down into the following key stages:
-
-1.  **Reception**: A DICOM C-STORE SCP (listener) waits for an external system (like a PACS or another node) to send a DICOM study. As files are received, they are saved into a temporary directory structure organized by `StudyInstanceUID`.
-
-2.  **Detection**: A file system watcher (`watchdog`) monitors the working directory. When it detects that files have stopped arriving for a specific study (after a configurable debounce interval), it triggers the processing pipeline for that study.
-
-3.  **Processing**: The core logic is executed on the completed study directory:
-    a.  The application identifies the main CT image series and the corresponding RT Structure Set file.
-    b.  It reads the contour data from the RTSTRUCT file.
-    c.  Specified contours (e.g., "skull") are ignored, and the remaining contours are merged into a single 3D binary mask.
-    d.  A new DICOM series is created based on the original CT images.
-    e.  The binary mask is embedded into the overlay plane (group 0x6000) of each slice in the new series.
-    f.  (Optional) A text disclaimer is burned into the pixel data.
-    g.  (Optional) The new series undergoes DICOM anonymization based on rules in `config.yaml`.
-
-4.  **Transmission**: The newly generated DICOM series (with overlays) is sent to the configured DICOM destination using C-STORE SCU operations.
-
-5.  **Cleanup**: After successful transmission, the temporary directory for the processed study is deleted. If any stage of processing or sending fails, the study is moved to a `quarantine` directory for manual inspection.
-
-## Data Flow Diagram
-
-The following diagram illustrates the flow of a DICOM study through the NETRT application.
-
-```graphviz
-digraph NETRT_Workflow {
-    rankdir=LR;
-    node [shape=box, style=rounded];
-
-    subgraph cluster_external {
-        label = "External System (PACS)";
-        style=filled;
-        color=lightgrey;
-        PACS [label="DICOM Source"];
-    }
-
-    subgraph cluster_netrt {
-        label = "NETRT Application";
-
-        subgraph cluster_reception {
-            label = "1. Reception";
-            DicomListener [label="DICOM Listener\n(C-STORE SCP)"];
-            WorkingDir [label="Working Directory\n(UID_.../)", shape=folder];
-        }
-
-        subgraph cluster_detection {
-            label = "2. Detection";
-            Watcher [label="File System Watcher\n(debounce)"];
-        }
-
-        subgraph cluster_processing {
-            label = "3. Processing";
-            StudyProcessor [label="Study Processor"];
-            ContourProcessing [label="Contour & Overlay Logic"];
-            Anonymizer [label="Anonymizer"];
-        }
-
-        subgraph cluster_sending {
-            label = "4. Transmission";
-            DicomSender [label="DICOM Sender\n(C-STORE SCU)"];
-        }
-
-        DicomListener -> WorkingDir [label="Saves files"];
-        Watcher -> StudyProcessor [label="Triggers on completion"];
-        StudyProcessor -> ContourProcessing [label="Generates overlay series"];
-        ContourProcessing -> Anonymizer [label="Anonymizes data"];
-        Anonymizer -> DicomSender [label="Sends processed series"];
-        
-        StudyProcessor -> QuarantineDir [style=dashed, color=red, label="On Failure"];
-        DicomSender -> Cleanup [style=dashed, color=blue, label="On Success"];
-    }
-
-    subgraph cluster_destination {
-        label = "External System (Destination)";
-        style=filled;
-        color=lightgrey;
-        Destination [label="DICOM Destination"];
-    }
-    
-    QuarantineDir [label="Quarantine Directory", shape=folder, color=red];
-    Cleanup [label="Cleanup\n(Delete Dir)", shape=ellipse, color=blue];
-
-    PACS -> DicomListener [label="C-STORE Push"];
-    DicomSender -> Destination [label="C-STORE Push"];
-}
+**File Organization**: Incoming DICOM files are automatically sorted into structured directories:
+```
+UID_<StudyInstanceUID>/
+├── DCM/          # CT/MR image series
+└── Structure/    # RTSTRUCT files
 ```
 
-## Core Components
+**Completion Detection**: A watchdog-based file monitor implements a debounce mechanism:
+- Monitors file system events in the working directory
+- Starts a countdown timer after each file activity
+- Default debounce interval: 5 seconds
+- Minimum file count required: 2 files
+- Processing triggers only after debounce period completes with no new activity
 
--   **`main.py`**: The main entry point that initializes and starts all other components.
--   **`netrt_core/`**: A Python package containing the modernized, core logic of the application.
-    -   **`dicom_listener.py`**: Manages the pynetdicom server for receiving files.
-    -   **`file_system_manager.py`**: Handles all file and directory operations, including creating study directories, saving files, and managing the `watchdog` observer.
-    -   **`study_processor.py`**: Orchestrates the main processing pipeline for a study after it has been received.
-    -   **`config_loader.py`**: Loads and validates the `config.yaml` file.
-    -   **`logging_setup.py`**: Configures the application and transaction loggers.
--   **Legacy Scripts**: A number of scripts (`Contour_Addition.py`, `DicomAnonymizer.py`, `Send_Files.py`, etc.) contain the original processing logic. These are currently called by the `StudyProcessor` and are targeted for refactoring into the `netrt_core` package.
+**Concurrent Processing Protection**: Thread-safe locks prevent multiple processing attempts on the same study simultaneously.
 
+### Core Processing Pipeline
+
+**1. Input Validation**
+- Verifies DCM directory exists and contains files
+- Locates RTSTRUCT file in Structure directory
+- Quarantines studies missing required components
+
+**2. Anonymization** (Optional)
+- Configurable tag removal or modification
+- Two modes: standard (specific tags) or comprehensive (extensive anonymization)
+- Operates on both image series and RTSTRUCT files
+
+**3. Contour Processing**
+- Loads RTSTRUCT using rt-utils library
+- Filters ROIs based on configurable name patterns
+- Merges remaining contours into unified 3D binary mask
+- Creates new DICOM series with overlay planes (group 0x6000)
+
+**4. Series Generation**
+- New SeriesInstanceUID and SOPInstanceUIDs generated
+- Configurable series descriptions and numbers
+- Maintains original study context (StudyInstanceUID, FrameOfReferenceUID)
+- Updates timestamps to processing time
+
+**5. Burn-in Processing** (Optional)
+- Overlays text disclaimer directly into pixel data
+- Configurable text content and positioning
+- Uses OpenCV for text rendering
+
+**6. Debug Visualization** (Optional)
+- Generates JPG images showing contour overlays
+- Creates Secondary Capture DICOM series for PACS viewing
+- High-quality matplotlib-based rendering
+- Useful for quality assurance and verification
+
+### Network Operations
+
+**DICOM Listener (C-STORE SCP)**
+- Multi-threaded pynetdicom server
+- Supports comprehensive storage SOP classes
+- Handles multiple transfer syntaxes
+- Integrates with file system manager for automatic processing
+
+**DICOM Sender (C-STORE SCU)**
+- Configurable presentation contexts
+- Batch directory transmission
+- Error handling and retry logic
+- Transaction logging for audit trails
+
+## File System Management
+
+### Directory Structure
+```
+Working Directory/
+├── UID_<StudyUID_1>/
+│   ├── DCM/                    # Original images
+│   ├── Structure/              # RTSTRUCT files
+│   ├── Addition/               # Processed overlay series
+│   └── DebugDicom/            # Debug visualization (optional)
+├── UID_<StudyUID_2>/
+└── quarantine/                 # Failed studies
+    └── UID_<StudyUID_3>_<timestamp>/
+```
+
+### File Monitoring Implementation
+- Uses Python watchdog library for efficient file system monitoring
+- Handles file creation, modification, and close events
+- Implements recursive directory monitoring
+- Ignores processing output directories to prevent loops
+
+### Error Handling and Recovery
+- Failed studies automatically moved to quarantine
+- Detailed error logging with stack traces
+- Preserves original data for manual analysis
+- Configurable retry mechanisms
+
+## Configuration Architecture
+
+### Hierarchical Configuration Loading
+1. Default values defined in code
+2. User configuration file (YAML) merged with defaults
+3. Command-line arguments override file settings
+4. Environment-specific path expansion
+
+### Dynamic Settings
+- Home directory path expansion (`~/` prefix)
+- Runtime debugging mode activation
+- Feature flag controls for optional components
+
+## Logging and Monitoring
+
+### Dual Logging System
+- **Application Log**: General system events, errors, debugging
+- **Transaction Log**: Structured audit trail for processing events
+
+### Transaction Event Types
+```
+PROCESSING_START   - Study processing initiated
+PROCESSING_SUCCESS - Study completed successfully  
+PROCESSING_FAILED  - Study processing failed
+SENDING_START      - DICOM transmission started
+SENDING_SUCCESS    - DICOM transmission completed
+```
+
+### Log Rotation and Management
+- Configurable log levels and formats
+- File and console output handlers
+- Structured logging for automated parsing
+
+## Performance and Scalability
+
+### Memory Management
+- Streaming DICOM file processing
+- Efficient numpy array operations for mask generation
+- Automatic cleanup of temporary data structures
+
+### Processing Optimization
+- Concurrent study processing (with locks for safety)
+- Efficient contour merge algorithms
+- Minimal disk I/O through direct memory operations
+
+### Resource Monitoring
+- Working directory cleanup after successful processing
+- Quarantine system prevents disk space exhaustion
+- Configurable processing parameters for resource control
+
+## Security Considerations
+
+### Data Protection
+- Configurable anonymization removes PHI
+- Temporary file secure handling
+- No persistent storage of sensitive data
+
+### Network Security
+- DICOM AE Title validation
+- Configurable network binding interfaces
+- Audit logging for all network operations
+
+### Error Information Disclosure
+- Sanitized error messages in logs
+- StudyInstanceUID tracking without patient information
+- Secure quarantine of problematic data
+
+## Integration Patterns
+
+### PACS Integration
+- Standard DICOM C-STORE operations
+- Compatible with major PACS vendors
+- Configurable presentation contexts for interoperability
+
+### Workflow Integration
+- Event-driven processing model
+- RESTful monitoring endpoints (future enhancement)
+- Standard exit codes for process management
+
+### Quality Assurance
+- Debug visualization for processing verification
+- Comprehensive audit trails
+- Quarantine system for manual review of failures

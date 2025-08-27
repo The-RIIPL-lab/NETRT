@@ -1,78 +1,108 @@
-# NETRT CONNECT - DICOM RT Structure Processor
+# NETRT - DICOM RT Structure Processor
 
-NETRT (CONNECT) is a service that listens for DICOM studies on a network port, automatically processes them to generate contour overlays from RT Structure Sets, and sends the newly created DICOM series to a specified destination.
-
-It is designed to run continuously as a background service, making it ideal for automated research workflows. The recommended deployment method is using Docker.
+NETRT is a DICOM service that automatically processes RT Structure Sets to create contour overlay series. It listens for DICOM studies on a network port, extracts contour data from RTSTRUCT files, merges them into binary masks, and creates new DICOM series with graphical overlays.
 
 ## Key Features
 
-- **DICOM Listener**: Receives DICOM studies over the network.
-- **Automated Processing**: Extracts contour data from RTSTRUCT files, merges them into a single binary mask, and creates a new DICOM series with the mask as a graphical overlay.
-- **Configurable**: All operational parameters (ports, AE titles, directories, processing options) are managed via a single `config.yaml` file.
-- **Anonymization**: Built-in tools to anonymize DICOM data, with both "full" and "partial" modes available.
-- **Logging**: Maintains detailed application and transaction logs for monitoring and debugging.
-- **Deployment Ready**: Includes a `Dockerfile` and `docker compose.yml` for easy and consistent deployment.
+- **DICOM Network Listener**: Receives DICOM studies via C-STORE operations
+- **Automated RT Processing**: Extracts and merges contour data from RTSTRUCT files
+- **Overlay Generation**: Creates new DICOM series with contour masks as overlay planes
+- **Configurable Anonymization**: Removes or modifies specified DICOM tags
+- **Debug Visualization**: Optional JPG and DICOM debug output for quality assurance
+- **Transaction Logging**: Detailed audit trails for all processing operations
 
-## Quick Start (Docker)
-
-This is the recommended method for running NETRT.
+## Quick Start with Docker
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+- Docker and Docker Compose
+- Network access to source and destination DICOM systems
 
-### Steps
+### Setup
 
-1.  **Clone the Repository**
+1. **Clone and Configure**
+   ```bash
+   git clone <repository_url>
+   cd NETRT
+   ```
 
-    ```bash
-    git clone <repository_url>
-    cd NETRT
-    ```
+2. **Edit Configuration**
+   
+   Modify `config.yaml` to set your DICOM network parameters:
+   ```yaml
+   dicom_listener:
+     host: "0.0.0.0"
+     port: 11112
+     ae_title: "NETRT"
+   
+   dicom_destination:
+     ip: "192.168.1.100"
+     port: 104
+     ae_title: "DESTINATION_AET"
+   ```
 
-2.  **Configure the Application**
+3. **Create Data Directories**
+   ```bash
+   mkdir -p /DATA/netrt_data/{working,logs}
+   ```
 
-    Edit the `config.yaml` file to match your environment. You will need to set the correct IP addresses, ports, and AE titles for your DICOM listener and destination.
+4. **Deploy**
+   ```bash
+   docker-compose up --build -d
+   ```
 
-3.  **Create Data Directories**
+5. **Verify Operation**
+   ```bash
+   docker-compose logs -f
+   ```
 
-    The `docker compose.yml` file is configured to use a local `netrt_data` directory. Create it now:
+### Management
 
-    ```bash
-    mkdir -p netrt_data/working netrt_data/logs
-    ```
+- **View Logs**: `docker-compose logs -f`
+- **Stop Service**: `docker-compose down`
+- **Restart**: `docker-compose restart`
 
-4.  **Build and Run the Container**
+## Configuration
 
-    Use Docker Compose to build the image and run the service in the background:
+All settings are managed through `config.yaml`. Key parameters include:
 
-    ```bash
-    docker compose up --build -d
-    ```
+- **Network Settings**: DICOM listener and destination configuration
+- **Processing Options**: Contour filtering rules, series descriptions
+- **Anonymization**: Tag removal and modification rules
+- **Directories**: Working and log file locations
 
-5.  **Verify the Service**
+See [CONFIGURATION.md](CONFIGURATION.md) for complete configuration reference.
 
-    Check the logs to ensure the service started correctly:
+## Processing Workflow
 
-    ```bash
-    docker compose logs -f
-    ```
+1. **Reception**: DICOM files received via C-STORE and organized by StudyInstanceUID
+2. **Detection**: File system monitoring triggers processing after transfer completion
+3. **Processing**: RT Structure contours extracted, filtered, and merged into overlay masks
+4. **Output**: New DICOM series created with contour overlays in overlay planes
+5. **Transmission**: Processed series sent to configured destination
+6. **Cleanup**: Temporary files removed after successful transmission
 
-    You should see messages indicating that the DICOM listener has started.
+## Documentation
 
-6.  **Stopping the Service**
+- [ARCHITECTURE.md](ARCHITECTURE.md): System design and component overview
+- [CONFIGURATION.md](CONFIGURATION.md): Complete configuration reference
+- [DEPLOYMENT.md](DEPLOYMENT.md): Docker and systemd deployment instructions
+- [DETAILS.md](DETAILS.md): Technical implementation details
 
-    To stop the application, run:
+## Requirements
 
-    ```bash
-    docker compose down
-    ```
+- Python 3.8+
+- DICOM network connectivity
+- Sufficient disk space for temporary study storage
 
-## Further Information
+## Production Considerations
 
-For more detailed information on configuration, architecture, and advanced usage, please see the following documents:
+- Configure appropriate disk space monitoring for working directories
+- Set up log rotation for application and transaction logs
+- Implement network security controls for DICOM communications
+- Test anonymization rules meet your privacy requirements
+- Monitor quarantine directory for failed studies
 
--   **[DETAILS.md](DETAILS.md)**: In-depth explanation of the application's workflow, components, and a data flow diagram.
--   **[CONFIGURATION.md](CONFIGURATION.md)**: A complete reference for all options in the `config.yaml` file.
--   **[DEPLOYMENT.md](DEPLOYMENT.md)**: Instructions for alternative deployment methods, such as using systemd.
+## Support
+
+For configuration issues, check the application logs in the configured logs directory. Failed studies are automatically moved to the quarantine subdirectory for manual review.

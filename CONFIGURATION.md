@@ -1,114 +1,156 @@
 # NETRT Configuration Guide
 
-This document provides a comprehensive guide to configuring the NETRT application. Configuration is primarily managed through a YAML file (default: `config.yaml`) and can be supplemented by command-line arguments.
+Configuration is managed through a YAML file (default: `config.yaml`). If the file is missing or invalid, default values are used and a new configuration file is created.
 
-## Configuration File (`config.yaml`)
+## Configuration Structure
 
-The application loads its configuration from a YAML file. If the specified file is not found or is invalid, a default configuration will be used, and a new `config.yaml` with default values will be created.
-
-### Top-Level Structure
-
-The `config.yaml` file is organized into several main sections:
+### DICOM Listener
 
 ```yaml
-dicom_listener: { ... }
-dicom_destination: { ... }
-directories: { ... }
-logging: { ... }
-anonymization: { ... }
-processing: { ... }
-watcher: { ... }
-feature_flags: { ... }
+dicom_listener:
+  host: "0.0.0.0"                    # IP address to bind to
+  port: 11112                        # TCP port number
+  ae_title: "NETRTCORE"              # Application Entity Title
+  config_negotiated_transfer_syntax: true  # Use negotiated transfer syntax
 ```
 
-### 1. `dicom_listener`
+### DICOM Destination
 
-Configures the DICOM C-STORE SCP (Service Class Provider) that listens for incoming DICOM studies.
+```yaml
+dicom_destination:
+  ip: "127.0.0.1"                    # Destination IP address
+  port: 104                          # Destination port
+  ae_title: "DEST_AET"               # Destination AE Title
+```
 
--   `host`: (String) The IP address the DICOM listener should bind to. Default: `"0.0.0.0"` (listens on all available network interfaces).
--   `port`: (Integer) The port number for the DICOM listener. Default: `11112`.
--   `ae_title`: (String) The Application Entity Title of the NETRT DICOM listener. Default: `"NETRTCORE"`.
--   `config_negotiated_transfer_syntax`: (Boolean) If `true`, when saving incoming DICOM files, the listener will attempt to use the negotiated transfer syntax from the DICOM association. If `false` or if a negotiated syntax is not available/applicable, it defaults to a standard explicit VR little endian syntax. Default: `true`.
+### Directories
 
-### 2. `dicom_destination`
+```yaml
+directories:
+  working: "~/CNCT_working"          # Study processing directory
+  logs: "~/CNCT_logs"                # Log file directory
+  quarantine_subdir: "quarantine"   # Quarantine subdirectory name
+```
 
-Configures the destination DICOM C-STORE SCU (Service Class User) to which processed studies will be sent.
+Paths starting with `~/` are expanded to the user's home directory.
 
--   `ip`: (String) The IP address of the destination DICOM server/PACS. Default: `"127.0.0.1"`.
--   `port`: (Integer) The port number of the destination DICOM server/PACS. Default: `104`.
--   `ae_title`: (String) The Application Entity Title of the destination DICOM server/PACS. Default: `"DEST_AET"`.
+### Processing Options
 
-### 3. `directories`
+```yaml
+processing:
+  # Contour filtering
+  ignore_contour_names_containing: ["skull"]
+  
+  # Overlay series settings
+  overlay_series_number: 98
+  overlay_series_description: "Processed DicomRT with Overlay"
+  overlay_study_id: "RTPlanShare"
+  
+  # Burn-in disclaimer
+  add_burn_in_disclaimer: true
+  burn_in_text: "FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE"
+  
+  # Segmentation series (if enabled)
+  segmentation_series_number: 99
+  segmentation_series_description_template: "RESEARCH USE ONLY: CONTOUR {}"
+  segmentation_algorithm_name: "Radiation Oncologist"
+  segmentation_algorithm_version: "v1.0"
+  segmentation_tracking_id: "FOR RESEARCH USE ONLY"
+  
+  # Debug visualization
+  debug_series_number: 101
+  debug_series_description: "DEBUG: Contour Overlay Visualization"
+```
 
-Defines paths for various operational directories. Paths starting with `~/` will be expanded to the user's home directory.
+### Anonymization
 
--   `working`: (String) The root directory where incoming studies are temporarily stored and processed. Default: `"~/CNCT_working"`.
--   `logs`: (String) The directory where log files (application and transaction logs) will be stored. Default: `"~/CNCT_logs"`.
--   `quarantine_subdir`: (String) The name of the subdirectory within the `working` directory where studies that fail processing are moved. Default: `"quarantine"`.
--   `ip_validation_file`: (String) Path to the JSON file containing rules for IP address validation (if used by `ip_validation.py`). Default: `"./valid_networks.json"`.
+```yaml
+anonymization:
+  enabled: true                      # Enable/disable anonymization
+  full_anonymization_enabled: false # Use comprehensive anonymization
+  
+  # Standard anonymization rules
+  rules:
+    remove_tags:                     # Tags to completely remove
+      - "AccessionNumber"
+      - "PatientID"
+      - "ReferringPhysicianName"
+      - "OtherPatientIDs"
+      - "PatientBirthDate"
+    blank_tags: []                   # Tags to set to empty string
+    generate_random_id_prefix: ""    # Prefix for generated IDs
+```
 
-### 4. `logging`
+When `full_anonymization_enabled` is true, comprehensive anonymization rules are applied including date/time modification and UID regeneration.
 
-Configures application-wide logging and specific transaction logging.
+### File System Watcher
 
--   `level`: (String) The minimum logging level for the application. Standard Python logging levels (e.g., `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`). Default: `"INFO"`.
--   `format`: (String) The format string for general application log messages. Uses Python logging format codes. Default: `"%(asctime)s [%(levelname)s] %(name)s: %(message)s"`.
--   `application_log_file`: (String) The name of the main application log file, stored in the `logs` directory. Default: `"application.log"`.
--   `transaction_log_file`: (String) The name of the transaction log file, stored in the `logs` directory. This log captures key events for each study processed. Default: `"transaction.log"`.
--   `transaction_log_format`: (String) The format string for transaction log messages. Default: `"%(asctime)s TXN [%(levelname)s]: %(message)s"`.
+```yaml
+watcher:
+  debounce_interval_seconds: 5       # Wait time after last file activity
+  min_file_count_for_processing: 2   # Minimum files before processing
+```
 
-### 5. `anonymization`
+### Feature Flags
 
-Controls the DICOM anonymization process.
+```yaml
+feature_flags:
+  enable_segmentation_export: false  # Create DICOM SEG objects
+```
 
--   `enabled`: (Boolean) Global switch to enable or disable all anonymization. If `false`, no anonymization is performed. Default: `true`.
--   `full_anonymization_enabled`: (Boolean) If `true` and `enabled` is also `true`, extensive anonymization rules defined in `full_anonymization_rules` are applied. If `false` but `enabled` is `true`, a partial/default anonymization is performed based on `default_tags_to_remove` and `default_tags_to_blank`. Default: `false`.
--   `default_tags_to_remove`: (List of Strings) A list of DICOM tag keywords to be completely removed from datasets when `full_anonymization_enabled` is `false`. Default: `["AccessionNumber", "PatientID"]`.
--   `default_tags_to_blank`: (List of Strings) A list of DICOM tag keywords whose values will be set to empty strings when `full_anonymization_enabled` is `false`. Default: `[]`.
--   `full_anonymization_rules`: (Dictionary) Contains detailed rules applied when `full_anonymization_enabled` is `true`.
-    -   `tags_to_remove`: (List of Strings) Tags to remove.
-    -   `tags_to_empty`: (List of Strings) Tags to set to zero-length.
-    -   `tags_to_modify_date`: (List of Strings) Date tags (YYYYMMDD) whose day part will be set to `01`.
-    -   `tags_to_modify_time`: (List of Strings) Time tags (HHMMSS.FFFFFF) whose minute, second, and fractional second parts will be set to `00`.
-    -   `tags_to_regenerate_uid`: (List of Strings) DICOM UIDs that will be replaced with newly generated UIDs.
-    -   `patient_id_override`: (String or `null`) If specified, the PatientID tag will be set to this value. If `null` or not present, PatientID might be removed or handled by other rules.
-    -   `patient_name_override`: (String or `null`) If specified, the PatientName tag will be set to this value. If `null` or not present, PatientName might be removed or handled by other rules.
-    *(See `DEFAULT_CONFIG` in `netrt_core/config_loader.py` for the default set of full anonymization rules)*
+### Logging
 
-### 6. `processing`
+```yaml
+logging:
+  level: "INFO"                      # Logging level
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  application_log_file: "application.log"
+  transaction_log_file: "transaction.log"
+  transaction_log_format: "%(asctime)s TXN [%(levelname)s]: %(message)s"
+```
 
-Configures parameters related to the study processing pipeline, especially contour and segmentation handling.
+## Command Line Arguments
 
--   `ignore_contour_names_containing`: (List of Strings) A list of case-insensitive substrings. Any RTSTRUCT ROI name containing one of these substrings will be ignored during contour processing (e.g., not merged or used for overlay). Default: `["skull", "patient_outline"]`.
--   `default_series_description`: (String) The default Series Description to be used for the new DICOM series created with contour overlays. Default: `"Processed DicomRT with Overlay"`.
--   `default_series_number_overlay`: (Integer) The default Series Number for the new DICOM series with contour overlays. Default: `9901`.
--   `default_series_number_seg`: (Integer) The default Series Number for new DICOM SEG objects, if created. Default: `9902`.
--   `add_burn_in_disclaimer`: (Boolean) If `true`, a text disclaimer will be burned into the pixel data of the generated overlay series. Default: `true`.
--   `burn_in_text`: (String) The text to be used for the burn-in disclaimer if `add_burn_in_disclaimer` is `true`. Default: `"FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE"`.
+- `--config <path>`: Specify configuration file path (default: config.yaml)
+- `--debug`: Enable debug visualization mode
 
-### 7. `watcher`
+## Default Behavior
 
-Configures the file system watcher that monitors the incoming directory for new studies.
+If configuration sections are missing, the following defaults apply:
 
--   `debounce_interval_seconds`: (Integer) The time in seconds the watcher will wait after the last file event in a study directory before considering the study reception complete and triggering processing. This helps ensure all files of a study have arrived. Default: `5`.
--   `min_file_count_for_processing`: (Integer) The minimum number of files that must be present in a study's subdirectory (e.g., `DCM` or `Structure`) before the watcher considers it for the debounce timer. This can help prevent processing prematurely if only a few initial files have arrived. Default: `2`.
+- **DICOM Listener**: Listens on all interfaces (0.0.0.0) port 11112
+- **Working Directory**: `~/CNCT_working`
+- **Anonymization**: Enabled, removes AccessionNumber and PatientID
+- **Processing**: Ignores contours containing "skull", adds burn-in disclaimer
+- **Logging**: INFO level to both console and files
 
-### 8. `feature_flags`
+## Example Configuration
 
-Allows enabling or disabling certain application features.
+```yaml
+dicom_listener:
+  host: "152.11.105.71"
+  port: 11116
+  ae_title: "CNCT_DEV"
 
--   `enable_segmentation_export`: (Boolean) If `true`, the application will attempt to generate and export DICOM SEG objects from RTSTRUCT contours. Default: `false`.
+dicom_destination:
+  ip: "152.11.105.71"
+  port: 4242
+  ae_title: "RADIORIIPL"
 
-## Command-Line Arguments
+processing:
+  ignore_contour_names_containing: ["skull"]
+  overlay_series_number: 999
+  overlay_series_description: "RESEARCH ONLY: Treatment Plan CT w Mask"
+  add_burn_in_disclaimer: true
 
-The application supports the following command-line arguments:
+anonymization:
+  enabled: true
+  rules:
+    remove_tags:
+      - "AccessionNumber"
+      - "PatientID"
+      - "PatientBirthDate"
 
--   `--config <path_to_config.yaml>`: Specifies the path to the configuration file. If not provided, the application will look for `config.yaml` in the current working directory (or the directory where `main.py` is located, depending on execution context).
-    Example: `python main.py --config /etc/netrt/production_config.yaml`
-
-## Default Configuration
-
-If `config.yaml` is not found or is invalid, the application will use internal default values and attempt to write these defaults to a new `config.yaml` file. The default values are defined in `netrt_core/config_loader.py` and cover all the options described above.
-
-It is recommended to copy the default `config.yaml` and customize it for your environment rather than relying on automatic creation, especially for production deployments.
-
+feature_flags:
+  enable_segmentation_export: false
+```

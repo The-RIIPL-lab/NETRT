@@ -1,136 +1,106 @@
 # NETRT Application Architecture
 
-This document provides an overview of the refactored NETRT application architecture after Round 1 changes.
+## Overview
 
-## 1. Overview
+NETRT is a DICOM processing service that receives DICOM studies over the network, extracts contour data from RT Structure Sets, creates overlay series with merged contour masks, and forwards the processed results to a specified destination.
 
-The NETRT application is designed to receive DICOM studies (images and RTSTRUCT files), process them to add contour overlays, perform anonymization as configured, and forward the results to a specified DICOM destination. The refactored architecture emphasizes modularity, configurability, and maintainability.
+## Core Components
 
-## 2. Core Components (`netrt_core` package)
+The application is built around the `netrt_core` package with the following modules:
 
-The application is structured around a `netrt_core` package containing the following key modules:
+### Configuration and Logging
+- **`config_loader.py`**: Loads settings from YAML configuration file with defaults
+- **`logging_setup.py`**: Configures application and transaction logging
 
-*   **`config_loader.py`**: 
-    *   Responsible for loading application settings from a YAML configuration file (e.g., `config.yaml`).
-    *   Provides default settings if the configuration file is missing or incomplete.
-    *   Handles path expansion for directory configurations.
-*   **`logging_setup.py`**:
-    *   Configures application-wide logging based on settings from the configuration file.
-    *   Sets up separate log files for general application logs and transaction logs (e.g., DICOM receipt/send events) in a configurable logs directory.
-*   **`file_system_manager.py`**:
-    *   Manages all file system operations related to study processing.
-    *   Creates and manages a configurable `working_directory` for temporary storage of incoming and processed studies.
-    *   Handles the creation of study-specific subdirectories (e.g., `UID_<StudyInstanceUID>/DCM`, `UID_<StudyInstanceUID>/Structure`).
-    *   Saves incoming DICOM files into the appropriate study structure.
-    *   Manages a `quarantine_directory` (subdir within `working_directory`) for studies that fail processing.
-    *   Cleans up study directories from the `working_directory` after successful processing and sending.
-    *   (Future: Will integrate event-based file system watching for new study detection via `watchdog` library).
-*   **`dicom_listener.py`**:
-    *   Implements the DICOM C-STORE SCP (server) using `pynetdicom`.
-    *   Listens for incoming DICOM associations on a configured IP address and port with a specific AE Title.
-    *   Handles C-ECHO requests for connectivity testing.
-    *   Handles C-STORE requests: receives DICOM datasets and uses the `FileSystemManager` to save them.
-    *   Triggers the study processing pipeline (via a callback to `StudyProcessor` or through an event queue managed by `FileSystemManager` once study reception is deemed complete).
-*   **`study_processor.py`**:
-    *   Orchestrates the entire processing pipeline for a single DICOM study once all its files are received.
-    *   Retrieves study data paths from the `FileSystemManager`.
-    *   Coordinates various processing steps based on the application configuration:
-        *   Anonymization (calling a refactored `DicomAnonymizer` utility).
-        *   Contour processing (using `ContourProcessor`).
-        *   DICOM SEG object creation (calling a `Segmentations` utility module, if enabled).
-        *   Adding "Burn-In" disclaimers (calling an `Add_Burn_In` utility module).
-        *   Sending processed files to the destination DICOM node (using a `Send_Files` utility module).
-    *   Interacts with `FileSystemManager` to quarantine failed studies or clean up successful ones.
-*   **`contour_processor.py`**:
-    *   Handles the logic for extracting ROI (Region of Interest) data from RTSTRUCT files and image series using `rt-utils`.
-    *   Implements the user-specified contour handling:
-        *   Ignores ROIs containing configurable keywords (e.g., "skull").
-        *   If multiple non-ignored ROIs are present, logs a warning and merges them into a single binary mask.
-    *   Generates new DICOM image instances with the (merged) contour mask added to the overlay plane (e.g., group 0x6000).
-    *   Ensures correct DICOM tagging for the new series (new SeriesInstanceUID, SOPInstanceUIDs, SeriesDescription, SeriesNumber, consistent StudyInstanceUID, FrameOfReferenceUID, etc.).
+### File System Management
+- **`file_system_manager.py`**: Manages study directories, file operations, and filesystem monitoring
+  - Creates `UID_<StudyInstanceUID>` directory structure
+  - Implements watchdog-based file monitoring with debounce timers
+  - Provides thread-safe processing locks
+  - Handles quarantine and cleanup operations
 
-## 3. Utility Modules (Existing, to be refactored/integrated)
+### DICOM Operations
+- **`dicom_listener.py`**: DICOM C-STORE SCP server using pynetdicom
+  - Receives incoming DICOM files
+  - Handles C-ECHO requests
+  - Integrates with FileSystemManager for file storage
 
-These modules from the original codebase are used by `StudyProcessor` and will be progressively refactored or confirmed for compatibility with the new core architecture:
+- **`dicom_sender.py`**: DICOM C-STORE SCU client
+  - Sends processed files to destination PACS
+  - Configurable presentation contexts
 
-*   **`DicomAnonymizer.py`**: 
-    *   (To be refactored) Performs anonymization of DICOM datasets based on rules defined in the configuration file (e.g., removing specific tags like AccessionNumber, PatientID, rather than a fixed full anonymization).
-*   **`Segmentations.py`**: 
-    *   Handles the creation of DICOM Segmentation Objects (DICOM SEG) if this feature is enabled.
-*   **`Add_Burn_In.py`**: 
-    *   Adds a "FOR RESEARCH USE ONLY" or similar textual burn-in to the processed images.
-*   **`Send_Files.py`**: 
-    *   Handles sending DICOM files (C-STORE SCU) to the configured destination DICOM node.
-*   **`ip_validation.py`**: 
-    *   Validates destination IP addresses against a list of allowed networks/IPs defined in a JSON file (path specified in config).
+### Processing Pipeline
+- **`study_processor.py`**: Orchestrates the complete processing workflow
+- **`contour_processor.py`**: Handles RT Structure Set processing
+  - Extracts ROI data using rt-utils
+  - Merges contours into binary masks
+  - Creates new DICOM series with overlay planes
+  - Optional debug visualization (JPG and DICOM formats)
 
-## 4. Data Flow
+- **`burn_in_processor.py`**: Adds text disclaimers to processed images
+- **`DicomAnonymizer.py`**: Handles DICOM anonymization with configurable rules
 
-1.  **Initialization**:
-    *   The main application script loads the configuration using `ConfigLoader`.
-    *   Logging is set up by `LoggingSetup`.
-    *   `FileSystemManager`, `StudyProcessor`, and `DicomListener` (and other utilities) are instantiated with the loaded configuration.
-2.  **DICOM Reception**:
-    *   `DicomListener` starts and waits for incoming DICOM associations.
-    *   Upon receiving DICOM files (C-STORE), it uses `FileSystemManager` to save them into a structured directory within the `working_directory` (e.g., `~/CNCT_working/UID_<StudyUID>/DCM/` and `~/CNCT_working/UID_<StudyUID>/Structure/`).
-3.  **Study Completion & Processing Trigger**:
-    *   Once all files for a study are received (detection mechanism to be refined, possibly via `FileSystemManager` and `DicomListener` event `EVT_CONN_CLOSE` or a file watcher), the `StudyProcessor` is invoked with the StudyInstanceUID.
-4.  **Study Processing Pipeline (`StudyProcessor`)**:
-    *   The `StudyProcessor` retrieves paths to the study's images and structure set.
-    *   **Anonymization (Optional)**: If enabled in config, relevant DICOM tags are modified/removed.
-    *   **Contour Processing (`ContourProcessor`)**: RTSTRUCT is parsed, specified ROIs are filtered/merged, and a new DICOM series with overlays is generated in an `Addition` subdirectory within the study's working folder.
-    *   **Burn-In**: Textual disclaimers are added to the images in the `Addition` folder.
-    *   **Segmentation (Optional)**: If enabled, DICOM SEG objects are created in a `Segmentations` subdirectory.
-5.  **DICOM Sending**:
-    *   The `StudyProcessor` uses the `Send_Files` utility to transmit the processed DICOM series (from `Addition` and optionally `Segmentations` subdirectories) to the destination DICOM node defined in the configuration.
-6.  **Logging & Auditing**:
-    *   Throughout the process, general application events and errors are logged to `application.log`.
-    *   Key transaction events (e.g., study received from IP, study sent to IP, StudyInstanceUID) are logged to `transaction.log`.
-7.  **Cleanup/Quarantine**:
-    *   If processing and sending are successful, `FileSystemManager` cleans up the study's directory from the `working_directory`.
-    *   If any critical error occurs, `FileSystemManager` moves the study's directory to the `quarantine_directory` for manual inspection.
+## Data Flow
 
-## 5. Configuration
-
-*   All primary configurations are managed via a central `config.yaml` file.
-*   This includes DICOM listener/destination details, directory paths, logging preferences, anonymization rules, contour processing parameters, and feature flags.
-
-## 6. Directory Structure (Example)
-
+### 1. Reception
+DICOM files are received via C-STORE and saved to structured directories:
 ```
-~/
-|-- CNCT_working/                  (Configurable: directories.working)
-|   |-- UID_1.2.3.456.789/          (Processing directory for a study)
-|   |   |-- DCM/                    (Original DICOM images)
-|   |   |   |-- image1.dcm
-|   |   |   `-- ...
-|   |   |-- Structure/              (Original RTSTRUCT files)
-|   |   |   `-- rtstruct.dcm
-|   |   |-- Addition/               (Processed images with overlays)
-|   |   |   |-- overlay_image1.dcm
-|   |   |   `-- ...
-|   |   |-- Segmentations/          (Generated DICOM SEG objects, if enabled)
-|   |   |   `-- seg.dcm
-|   |   `-- (other temp files)
-|   `-- quarantine/                 (Configurable: directories.quarantine_subdir)
-|       `-- UID_9.8.7.654.321/      (Failed study moved here)
-|-- CNCT_logs/                     (Configurable: directories.logs)
-|   |-- application.log
-|   `-- transaction.log
-|-- NETRT/                         (Application source code)
-|   |-- netrt_core/
-|   |   |-- __init__.py
-|   |   |-- config_loader.py
-|   |   |-- logging_setup.py
-|   |   |-- file_system_manager.py
-|   |   |-- dicom_listener.py
-|   |   |-- study_processor.py
-|   |   `-- contour_processor.py
-|   |-- tests/
-|   |-- (old modules like DicomAnonymizer.py, Send_Files.py etc.)
-|   |-- main.py                     (New main application entry point)
-|   `-- config.yaml                 (Default or user-provided configuration)
+UID_<StudyInstanceUID>/
+├── DCM/           # CT/MR images
+└── Structure/     # RTSTRUCT files
 ```
 
-This modular architecture aims to make NETRT more robust, easier to understand, maintain, and extend in future development rounds.
+### 2. Detection
+Filesystem watcher monitors for file activity. After a configurable debounce period (default 5 seconds) with no new files, processing is triggered.
 
+### 3. Processing Pipeline
+1. **Validation**: Verify required directories and files exist
+2. **Anonymization**: Remove or modify specified DICOM tags (optional)
+3. **Contour Processing**: Extract and merge ROI contours, create overlay series
+4. **Burn-in**: Add text disclaimers to pixel data (optional)
+5. **Debug Output**: Generate visualization images and debug DICOM series (optional)
+
+### 4. Output Structure
+Processed files are organized in additional subdirectories:
+```
+UID_<StudyInstanceUID>/
+├── DCM/
+├── Structure/
+├── Addition/       # Processed series with overlays
+└── DebugDicom/     # Debug visualization series (if enabled)
+```
+
+### 5. Transmission and Cleanup
+Processed series are sent to the configured destination via C-STORE. On success, the entire study directory is removed. On failure, the study is moved to quarantine.
+
+## Configuration
+
+All settings are managed through a single `config.yaml` file covering:
+- DICOM listener and destination parameters
+- Directory paths
+- Processing options (contour filtering, series descriptions, etc.)
+- Anonymization rules
+- Feature flags
+
+## Concurrency and Safety
+
+- Thread-safe processing locks prevent duplicate processing of the same study
+- Debounce mechanism ensures studies are only processed after file transfer completion
+- Quarantine system preserves problematic studies for analysis
+- Comprehensive logging tracks all operations for auditing
+
+## Directory Structure
+
+```
+~/CNCT_working/                    # Working directory
+├── UID_<StudyUID>/                # Individual study processing
+│   ├── DCM/                       # Original images
+│   ├── Structure/                 # RTSTRUCT files
+│   ├── Addition/                  # Processed overlay series
+│   └── DebugDicom/               # Debug visualization (optional)
+└── quarantine/                    # Failed studies
+
+~/CNCT_logs/                       # Log files
+├── application.log                # General application events
+└── transaction.log               # Study processing transactions
+```
