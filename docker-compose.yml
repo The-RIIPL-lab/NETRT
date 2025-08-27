@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   netrt:
     build: .
@@ -17,12 +15,12 @@ services:
       # Mounts a local directory for the application's working data.
       # This path should correspond to the 'directories.working' path in your config.yaml,
       # but pointing to the path *inside* the container (e.g., /home/appuser/CNCT_working).
-      - ./netrt_data/working:/home/appuser/CNCT_working
+      - /DATA/netrt_data/working:/home/appuser/CNCT_working
 
       # Mounts a local directory for persistent log files.
       # This path should correspond to the 'directories.logs' path in your config.yaml,
       # but pointing to the path *inside* the container (e.g., /home/appuser/CNCT_logs).
-      - ./netrt_data/logs:/home/appuser/CNCT_logs
+      - /DATA/netrt_data/logs:/home/appuser/CNCT_logs
 
 networks:
   default:

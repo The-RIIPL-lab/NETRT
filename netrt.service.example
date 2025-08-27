@@ -1,3 +1,7 @@
+# This is an example systemd unit file for runnign the application on 
+# host as a service, not a docker container. 
+# This will require some modification to work on your system.
+
 [Unit]
 Description=NETRT DICOM Processing Application
 After=network.target

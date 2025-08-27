@@ -1,6 +1,6 @@
-# NETRT - DICOM RT Structure Processor
+# NETRT CONNECT - DICOM RT Structure Processor
 
-NETRT is a service that listens for DICOM studies on a network port, automatically processes them to generate contour overlays from RT Structure Sets, and sends the newly created DICOM series to a specified destination.
+NETRT (CONNECT) is a service that listens for DICOM studies on a network port, automatically processes them to generate contour overlays from RT Structure Sets, and sends the newly created DICOM series to a specified destination.
 
 It is designed to run continuously as a background service, making it ideal for automated research workflows. The recommended deployment method is using Docker.
 
@@ -11,7 +11,7 @@ It is designed to run continuously as a background service, making it ideal for 
 - **Configurable**: All operational parameters (ports, AE titles, directories, processing options) are managed via a single `config.yaml` file.
 - **Anonymization**: Built-in tools to anonymize DICOM data, with both "full" and "partial" modes available.
 - **Logging**: Maintains detailed application and transaction logs for monitoring and debugging.
-- **Deployment Ready**: Includes a `Dockerfile` and `docker-compose.yml` for easy and consistent deployment.
+- **Deployment Ready**: Includes a `Dockerfile` and `docker compose.yml` for easy and consistent deployment.
 
 ## Quick Start (Docker)
 
@@ -37,7 +37,7 @@ This is the recommended method for running NETRT.
 
 3.  **Create Data Directories**
 
-    The `docker-compose.yml` file is configured to use a local `netrt_data` directory. Create it now:
+    The `docker compose.yml` file is configured to use a local `netrt_data` directory. Create it now:
 
     ```bash
     mkdir -p netrt_data/working netrt_data/logs
@@ -48,7 +48,7 @@ This is the recommended method for running NETRT.
     Use Docker Compose to build the image and run the service in the background:
 
     ```bash
-    docker-compose up --build -d
+    docker compose up --build -d
     ```
 
 5.  **Verify the Service**
@@ -56,7 +56,7 @@ This is the recommended method for running NETRT.
     Check the logs to ensure the service started correctly:
 
     ```bash
-    docker-compose logs -f
+    docker compose logs -f
     ```
 
     You should see messages indicating that the DICOM listener has started.
@@ -66,7 +66,7 @@ This is the recommended method for running NETRT.
     To stop the application, run:
 
     ```bash
-    docker-compose down
+    docker compose down
     ```
 
 ## Further Information

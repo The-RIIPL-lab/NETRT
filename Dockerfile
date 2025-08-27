@@ -46,12 +46,6 @@ USER appuser
 # Define mount points for persistent data and configuration
 VOLUME ["/home/appuser/CNCT_logs", "/home/appuser/CNCT_working", "/app/config"]
 
-# Expose the port the app runs on (should match config.yaml)
-# This is a placeholder; the actual port is in config.yaml. 
-# Users should ensure their config.yaml inside /app/config matches this or use -p to map.
-EXPOSE 11112 
-
 # Define the command to run the application
 # It expects config.yaml to be in /app/config/config.yaml
 CMD ["python", "main.py", "--config", "/app/config/config.yaml"]
-

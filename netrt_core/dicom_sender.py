@@ -1,8 +1,23 @@
 import os
 import logging
 from pydicom import dcmread
-from pynetdicom import AE, ALL_TRANSFER_SYNTAXES
-from pynetdicom.sop_class import AllStoragePresentationContexts
+from pynetdicom import AE
+from pynetdicom.sop_class import (
+    CTImageStorage,
+    MRImageStorage, 
+    RTStructureSetStorage,
+    SegmentationStorage,
+    SecondaryCaptureImageStorage
+)
+from pydicom.uid import (
+    ImplicitVRLittleEndian,
+    ExplicitVRLittleEndian,
+    ExplicitVRBigEndian,
+    JPEGBaseline8Bit,
+    JPEGExtended12Bit,
+    JPEG2000Lossless,
+    JPEG2000
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +37,33 @@ class DicomSender:
         self.port = port
         self.ae_title = ae_title
         self.ae = AE()
-        # Add all standard storage presentation contexts
-        for context in AllStoragePresentationContexts:
-            self.ae.add_requested_context(context.abstract_syntax, ALL_TRANSFER_SYNTAXES)
+        self._configure_contexts()
+
+    def _configure_contexts(self):
+        """Configure a reasonable set of presentation contexts to avoid exceeding limits."""
+        # Common transfer syntaxes that should cover most use cases
+        common_transfer_syntaxes = [
+            ImplicitVRLittleEndian,
+            ExplicitVRLittleEndian,
+            ExplicitVRBigEndian,
+            JPEGBaseline8Bit,
+            JPEG2000Lossless
+        ]
+        
+        # Common storage SOP classes that NETRT is likely to work with
+        common_storage_classes = [
+            CTImageStorage,
+            MRImageStorage,
+            RTStructureSetStorage,
+            SegmentationStorage,
+            SecondaryCaptureImageStorage
+        ]
+        
+        # Add contexts for common combinations
+        for sop_class in common_storage_classes:
+            self.ae.add_requested_context(sop_class, common_transfer_syntaxes)
+        
+        logger.debug(f"Configured {len(common_storage_classes)} storage classes with {len(common_transfer_syntaxes)} transfer syntaxes each")
 
     def send_directory(self, directory_path):
         """
@@ -60,12 +99,12 @@ class DicomSender:
                     ds = dcmread(filepath)
                     status = assoc.send_c_store(ds)
                     if status and status.Status == 0x0000:
-                        logger.debug(f"Successfully sent {filepath}")
+                        logger.debug(f"Successfully sent {os.path.basename(filepath)}")
                     else:
-                        logger.error(f"Failed to send {filepath}. Status: {status}")
+                        logger.error(f"Failed to send {os.path.basename(filepath)}. Status: {status}")
                         success = False
                 except Exception as e:
-                    logger.error(f"Exception while sending file {filepath}: {e}", exc_info=True)
+                    logger.error(f"Exception while sending file {os.path.basename(filepath)}: {e}", exc_info=True)
                     success = False
         finally:
             assoc.release()

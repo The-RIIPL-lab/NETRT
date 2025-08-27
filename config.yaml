@@ -20,27 +20,34 @@ processing:
   
   # --- Overlay Series Settings ---
   # The Series Number to assign to the new series with contour overlays.
-  overlay_series_number: 98
+  overlay_series_number: 999
+
   # The Series Description for the new overlay series.
   overlay_series_description: "RESEARCH ONLY: Unapproved Treatment Plan CT w Mask"
+
   # The Study ID to assign to the new overlay series.
   overlay_study_id: "RTPlanShare"
 
   # --- Burn-In Settings ---
   # Whether to add a text disclaimer burned into the pixel data of the overlay series.
   add_burn_in_disclaimer: true
+
   # The text to use for the burn-in disclaimer.
   burn_in_text: "FOR RESEARCH USE ONLY - NOT FOR CLINICAL USE"
 
   # --- Segmentation Series Settings (if enabled via feature_flags) ---
   # The Series Number to assign to new DICOM SEG objects.
   segmentation_series_number: 99
+
   # A template for the Series Description of new SEG objects. {} is replaced with the contour name.
   segmentation_series_description_template: "RESEARCH USE ONLY: CONTOUR {}"
+
   # The name of the algorithm used for segmentation.
   segmentation_algorithm_name: "Radiation Oncologist"
+
   # The version of the algorithm used for segmentation.
   segmentation_algorithm_version: "v1.0"
+  
   # The tracking ID for the segmentation.
   segmentation_tracking_id: "FOR RESEARCH USE ONLY"
 
@@ -51,6 +58,28 @@ anonymization:
     remove_tags:
       - "AccessionNumber"
       - "PatientID"
+      
+      # Additional PHI tags you requested
+      - "ReferringPhysicianName"       # (0008,0090)
+      - "OtherPatientIDs"              # (0010,1000)
+      - "PatientBirthDate"             # (0010,0030)
+      - "PatientWeight"                # (0010,1030)
+      - "PatientAge"                   # (0010,1010)
+      
+      # Additional common PHI tags
+      - "PatientAddress"               # (0010,1040)
+      - "PatientTelephoneNumbers"      # (0010,2154)
+      - "OtherPatientNames"            # (0010,1001)
+      - "PatientMotherBirthName"       # (0010,1060)
+      - "ReferringPhysicianAddress"    # (0008,0092)
+      - "ReferringPhysicianTelephoneNumbers"  # (0008,0094)
+      - "PhysiciansOfRecord"           # (0008,1048)
+      - "OperatorsName"                # (0008,1070)
+      - "InstitutionName"              # (0008,0080)
+      - "InstitutionAddress"           # (0008,0081)
+      - "PerformingPhysicianName"      # (0008,1050)
+      - "RequestingPhysician"          # (0032,1032)
+      - "StudyID"                      # (0020,0010)
     blank_tags: []
     generate_random_id_prefix: ""
 

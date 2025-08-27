@@ -8,3 +8,4 @@ UID*
 .venv/
 logs/
 rt-utils*/
+netrt_data/*
