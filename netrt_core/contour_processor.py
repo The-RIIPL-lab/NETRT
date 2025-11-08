@@ -38,27 +38,73 @@ class ContourProcessor:
                 dicom_series_path=dcm_path,
                 rt_struct_path=struct_path
             )
-            mask = self._create_merged_mask(rt_struct)
-            self._create_overlay_series(dcm_path, mask, output_path)
-            
+            # Get first non-SKULL contour for overlay series
+            first_contour_mask = self._create_first_contour_mask(rt_struct)
+            self._create_overlay_series(dcm_path, first_contour_mask, output_path)
+
             debug_dicom_dir = None
             if debug_mode:
-                # Create JPG debug images
-                self.save_debug_visualization(dcm_path, mask, os.path.dirname(output_path), study_uid or "UNKNOWN")
-                # Create DICOM debug series
-                debug_dicom_dir = self.create_debug_dicom_series(dcm_path, mask, os.path.dirname(output_path), study_uid or "UNKNOWN")
-            
+                # For debug visualization, get individual contours for colored display
+                individual_contours = self._get_individual_contours(rt_struct)
+                # Create JPG debug images with colored contours
+                self.save_debug_visualization(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN")
+                # Create DICOM debug series with colored contours
+                debug_dicom_dir = self.create_debug_dicom_series(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN")
+
             return True, debug_dicom_dir  # Return debug dir path for sending
         except Exception as e:
             logger.error(f"Failed during contour processing: {e}", exc_info=True)
             return False, None
+
+    def _create_first_contour_mask(self, rt_struct):
+        """Creates a binary mask from only the first non-SKULL contour."""
+        all_rois = rt_struct.get_roi_names()
+        ignore_terms = self.processing_config.get("ignore_contour_names_containing", ["skull"])
+        rois_to_process = [r for r in all_rois if not any(term.lower() in r.lower() for term in ignore_terms)]
+
+        logger.info(f"Original ROIs found: {all_rois}")
+        logger.info(f"Ignoring contours containing: {ignore_terms}")
+        logger.info(f"ROIs available after filtering: {rois_to_process}")
+
+        if not rois_to_process:
+            raise ValueError("No contours left to process after filtering.")
+
+        # Use only the FIRST contour for overlay plane
+        first_roi = rois_to_process[0]
+        logger.info(f"Using FIRST contour for overlay plane: {first_roi}")
+
+        try:
+            mask_3d = rt_struct.get_roi_mask_by_name(first_roi)
+            return np.flip(mask_3d, axis=2)  # Flip mask to match slice order
+        except Exception as e:
+            logger.error(f"Could not get mask for first ROI '{first_roi}': {e}")
+            raise
+
+    def _get_individual_contours(self, rt_struct):
+        """Returns a list of individual contour masks for multi-color visualization."""
+        all_rois = rt_struct.get_roi_names()
+        ignore_terms = self.processing_config.get("ignore_contour_names_containing", ["skull"])
+        rois_to_process = [r for r in all_rois if not any(term.lower() in r.lower() for term in ignore_terms)]
+
+        logger.info(f"Extracting {len(rois_to_process)} individual contours for debug visualization")
+
+        contour_list = []
+        for roi in rois_to_process:
+            try:
+                mask_3d = rt_struct.get_roi_mask_by_name(roi)
+                flipped_mask = np.flip(mask_3d, axis=2)  # Flip to match slice order
+                contour_list.append({'name': roi, 'mask': flipped_mask})
+            except Exception as e:
+                logger.warning(f"Could not get mask for ROI '{roi}'. Skipping. Error: {e}")
+
+        return contour_list
 
     def _create_merged_mask(self, rt_struct):
         """Merges specified ROI contours into a single binary 3D mask."""
         all_rois = rt_struct.get_roi_names()
         ignore_terms = self.processing_config.get("ignore_contour_names_containing", ["skull"])
         rois_to_process = [r for r in all_rois if not any(term.lower() in r.lower() for term in ignore_terms)]
-        
+
         logger.info(f"Original ROIs found: {all_rois}")
         logger.info(f"Ignoring contours containing: {ignore_terms}")
         logger.info(f"ROIs to be merged into mask: {rois_to_process}")
@@ -76,7 +122,7 @@ class ContourProcessor:
                 merged_mask = np.logical_or(merged_mask, mask_3d)
             except Exception as e:
                 logger.warning(f"Could not get mask for ROI '{roi}'. Skipping. Error: {e}")
-        
+
         return np.flip(merged_mask, axis=2) # Flip mask to match slice order
 
     def _sort_dicom_files(self, dcm_path):
@@ -200,113 +246,134 @@ class ContourProcessor:
         
         return new_ds
     
-    def save_debug_visualization(self, dcm_path, mask_3d, output_dir, study_uid):
-        """Save debug JPG images showing the binary mask overlay on DICOM slices."""
+    def save_debug_visualization(self, dcm_path, contour_list, output_dir, study_uid):
+        """Save debug JPG images showing multiple colored contour overlays on DICOM slices."""
         debug_dir = os.path.join(output_dir, "debug_visualization")
         os.makedirs(debug_dir, exist_ok=True)
-        
+
         sorted_files = self._sort_dicom_files(dcm_path)
-        logger.info(f"Creating debug visualization for {len(sorted_files)} slices in {debug_dir}")
-        
+        logger.info(f"Creating debug visualization for {len(sorted_files)} slices with {len(contour_list)} contours in {debug_dir}")
+
+        # Define color rotation (starting with red)
+        colors = ['red', 'blue', 'green', 'yellow', 'cyan', 'magenta', 'orange', 'purple']
+
         for i, filename in enumerate(sorted_files):
             try:
                 # Read the original DICOM file
                 ds = pydicom.dcmread(os.path.join(dcm_path, filename))
-                if not hasattr(ds, 'SliceLocation') or i >= mask_3d.shape[2]:
+                if not hasattr(ds, 'SliceLocation'):
                     continue
-                
+
+                # Check if slice index is valid for all contours
+                if i >= contour_list[0]['mask'].shape[2]:
+                    continue
+
                 # Get the image data and normalize to 8-bit
                 img_data = ds.pixel_array
                 img_normalized = ((img_data - img_data.min()) / (img_data.max() - img_data.min()) * 255).astype(np.uint8)
-                
-                # Get the corresponding mask slice
-                mask_slice = mask_3d[:, :, i]
-                
+
                 # Create the visualization
                 fig, ax = plt.subplots(figsize=(10, 10))
                 ax.imshow(img_normalized, cmap='gray', alpha=1.0)
-                
-                # Overlay the mask as red contours
-                if np.any(mask_slice):
-                    contours = plt.contour(mask_slice, levels=[0.5], colors='red', linewidths=2)
-                    plt.clabel(contours, inline=True, fontsize=8)
-                
-                ax.set_title(f'Study: {study_uid}\nSlice {i+1}: {filename}\nMask Overlay (Red)')
+
+                # Overlay each contour with a different color
+                contour_names = []
+                for idx, contour_info in enumerate(contour_list):
+                    mask_slice = contour_info['mask'][:, :, i]
+                    contour_name = contour_info['name']
+                    color = colors[idx % len(colors)]  # Rotate through colors
+
+                    if np.any(mask_slice):
+                        ax.contour(mask_slice, levels=[0.5], colors=color, linewidths=2)
+                        contour_names.append(f"{contour_name} ({color})")
+
+                title_text = f'Study: {study_uid}\nSlice {i+1}: {filename}\n' + ', '.join(contour_names)
+                ax.set_title(title_text, fontsize=8)
                 ax.axis('off')
-                
+
                 # Save as JPG
                 jpg_filename = f"slice_{i+1:03d}_{filename.replace('.dcm', '.jpg')}"
                 jpg_path = os.path.join(debug_dir, jpg_filename)
                 plt.savefig(jpg_path, format='jpg', bbox_inches='tight', dpi=150)
                 plt.close()
-                
+
             except Exception as e:
                 logger.warning(f"Could not create debug visualization for slice {i}: {e}")
                 continue
-        
+
         logger.info(f"Debug visualization complete. Images saved to: {debug_dir}")
 
-    def create_debug_dicom_series(self, dcm_path, mask_3d, output_dir, study_uid):
-        """Create a DICOM Secondary Capture series from debug visualizations."""
+    def create_debug_dicom_series(self, dcm_path, contour_list, output_dir, study_uid):
+        """Create a DICOM Secondary Capture series from debug visualizations with colored contours."""
         debug_dicom_dir = os.path.join(output_dir, "DebugDicom")
         os.makedirs(debug_dicom_dir, exist_ok=True)
-        
+
         sorted_files = self._sort_dicom_files(dcm_path)
-        logger.info(f"Creating debug DICOM series for {len(sorted_files)} slices in {debug_dicom_dir}")
-        
-        # Use non-interactive backend
+        logger.info(f"Creating debug DICOM series for {len(sorted_files)} slices with {len(contour_list)} contours in {debug_dicom_dir}")
+
+        # Define color rotation (starting with red)
+        colors = ['red', 'blue', 'green', 'yellow', 'cyan', 'magenta', 'orange', 'purple']
+
         new_series_uid = uid.generate_uid()
-        
+
         for i, filename in enumerate(sorted_files):
             try:
                 ds = pydicom.dcmread(os.path.join(dcm_path, filename))
-                if not hasattr(ds, 'SliceLocation') or i >= mask_3d.shape[2]:
+                if not hasattr(ds, 'SliceLocation'):
                     continue
-                
+
+                # Check if slice index is valid for all contours
+                if i >= contour_list[0]['mask'].shape[2]:
+                    continue
+
                 # Create the visualization with matplotlib (high quality)
                 img_data = ds.pixel_array
                 img_normalized = ((img_data - img_data.min()) / (img_data.max() - img_data.min()) * 255).astype(np.uint8)
-                mask_slice = mask_3d[:, :, i]
-                
+
                 # Create figure with exact pixel dimensions for 1:1 mapping
                 dpi = 100
                 fig_width = img_data.shape[1] / dpi
                 fig_height = img_data.shape[0] / dpi
-                
+
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
                 ax.imshow(img_normalized, cmap='gray', alpha=1.0)
-                
-                if np.any(mask_slice):
-                    # High quality matplotlib contours
-                    contours = ax.contour(mask_slice, levels=[0.5], colors='red', linewidths=1, alpha=0.6)
-                
+
+                # Overlay each contour with a different color
+                for idx, contour_info in enumerate(contour_list):
+                    mask_slice = contour_info['mask'][:, :, i]
+                    color = colors[idx % len(colors)]  # Rotate through colors
+
+                    if np.any(mask_slice):
+                        # High quality matplotlib contours with rotating colors
+                        ax.contour(mask_slice, levels=[0.5], colors=color, linewidths=1, alpha=0.8)
+
                 ax.axis('off')
                 fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
-                
+
                 # Robust method to get RGB array - works across matplotlib versions
                 from io import BytesIO
                 buf = BytesIO()
                 fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', pad_inches=0)
                 buf.seek(0)
-                
+
                 # Read back as RGB array using PIL (more reliable than canvas methods)
                 from PIL import Image
                 pil_img = Image.open(buf)
                 rgb_array = np.array(pil_img.convert('RGB'))
-                
+
                 plt.close(fig)  # Important: close the figure to free memory
                 buf.close()
-                
+
                 # Create new DICOM dataset
                 new_ds = self._create_secondary_capture_dicom(ds, rgb_array, new_series_uid, i)
-                
+
                 # Save the DICOM file
                 output_filename = os.path.join(debug_dicom_dir, f"DEBUG-{filename}")
                 new_ds.save_as(output_filename, enforce_file_format=True)
-                
+
             except Exception as e:
                 logger.warning(f"Could not create debug DICOM for slice {i}: {e}")
                 continue
-        
+
         logger.info(f"Debug DICOM series created in: {debug_dicom_dir}")
         return debug_dicom_dir
