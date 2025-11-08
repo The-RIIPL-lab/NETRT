@@ -8,6 +8,7 @@ from .burn_in_processor import BurnInProcessor
 from .contour_processor import ContourProcessor
 from .report_generator import ReportGenerator
 from DicomAnonymizer import DicomAnonymizer
+import datetime
 
 logger = logging.getLogger(__name__)
 transaction_logger = logging.getLogger("transaction")
@@ -68,14 +69,21 @@ class StudyProcessor:
                     report.add_line("Burn-in disclaimer added.")
 
                 report.add_line("Sending processed series...")
-                self._send_directory(addition_path, "OVERLAY", study_instance_uid)
-                report.add_line("Processed series sent successfully.")
+                send_success = self._send_directory(addition_path, "OVERLAY", study_instance_uid)
+                if send_success:
+                    report.add_line("Processed series sent successfully.")
+                else:
+                    report.add_line("ERROR: Failed to send processed series to destination.")
+                    raise Exception(f"Failed to send overlay series to destination PACS")
 
                 # Send debug DICOM series if created
                 if debug_dicom_dir and os.path.exists(debug_dicom_dir):
                     report.add_line("Sending debug series...")
-                    self._send_directory(debug_dicom_dir, "DEBUG", study_instance_uid)
-                    report.add_line("Debug series sent successfully.")
+                    debug_send_success = self._send_directory(debug_dicom_dir, "DEBUG", study_instance_uid)
+                    if debug_send_success:
+                        report.add_line("Debug series sent successfully.")
+                    else:
+                        report.add_line("WARNING: Failed to send debug series to destination (non-critical).")
             else:
                 logger.warning(f"No RTSTRUCT file found for study {study_instance_uid}. Nothing to process or send.")
                 report.add_line("No RTSTRUCT file found. No processing performed.")
@@ -139,12 +147,21 @@ class StudyProcessor:
             self.anonymizer.anonymize_file(struct_file_path)
 
     def _send_directory(self, directory_path, series_type, study_instance_uid):
-        """Sends a directory of DICOM files to the configured destination."""
+        """Sends a directory of DICOM files to the configured destination.
+
+        Returns:
+            bool: True if sending was successful, False otherwise.
+        """
         dest_config = self.config.get("dicom_destination", {})
         sender = DicomSender(dest_config.get("ip"), dest_config.get("port"), dest_config.get("ae_title"))
-        
+
         transaction_logger.info(f"SENDING_START SeriesType: {series_type}, StudyUID: {study_instance_uid}, DestAET: {sender.ae_title}")
-        if sender.send_directory(directory_path):
+        success = sender.send_directory(directory_path)
+
+        if success:
             transaction_logger.info(f"SENDING_SUCCESS SeriesType: {series_type}, StudyUID: {study_instance_uid}, DestAET: {sender.ae_title}")
         else:
-            raise Exception(f"Failed to send {series_type} series.")
+            transaction_logger.error(f"SENDING_FAILED SeriesType: {series_type}, StudyUID: {study_instance_uid}, DestAET: {sender.ae_title}")
+            logger.error(f"Failed to send {series_type} series to {sender.ae_title}@{dest_config.get('ip')}:{dest_config.get('port')}")
+
+        return success
