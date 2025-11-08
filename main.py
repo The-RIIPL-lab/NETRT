@@ -49,9 +49,16 @@ def main():
         host=config.get("dicom_listener", {}).get("host", "0.0.0.0"),
         port=config.get("dicom_listener", {}).get("port", 11112),
         ae_title=config.get("dicom_listener", {}).get("ae_title", "CNCT"),
-        study_processor_callback=study_processor_instance.process_study, # This callback is for the listener itself (e.g. on connection close)
+        study_processor_callback=None, # No longer directly used
         file_system_manager=file_system_manager,
     )
+
+    def study_processing_callback(study_instance_uid):
+        sender_info = dicom_listener.study_senders.get(study_instance_uid, {})
+        study_processor_instance.process_study(study_instance_uid, sender_info)
+
+    file_system_manager.study_processor_callback = study_processing_callback
+
 
     # 4. Start Services
     # Start file system watcher first if it runs in a separate thread

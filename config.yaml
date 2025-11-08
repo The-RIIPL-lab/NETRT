@@ -1,18 +1,18 @@
 dicom_listener:
   # Host IP address to listen for incoming DICOM connections
-  host: 152.11.105.71
+  host: 0.0.0.0
   # TCP port for the DICOM listener
   port: 11116
   # AE Title for the DICOM listener
-  ae_title: CNCT_DEV
+  ae_title: CONNECT
 
 dicom_destination:
   # IP address of the remote DICOM destination
-  ip: 152.11.105.71
+  ip: 192.168.1.115
   # TCP port of the remote DICOM destination
-  port: 4242
+  port: 11114
   # AE Title of the remote DICOM destination
-  ae_title: RADIORIIPL
+  ae_title: MICRODICOM
 
 processing:
   # A list of case-insensitive substrings. Contours with names containing these will be ignored.
@@ -53,7 +53,7 @@ processing:
 
   # Debug visualization settings
   debug_series_number: 101
-  ebug_series_description: "DEBUG: Contour Overlay Visualization"
+  debug_series_description: "DEBUG: Contour Overlay Visualization"
 
 anonymization:
   enabled: true
@@ -88,4 +88,8 @@ anonymization:
     generate_random_id_prefix: ""
 
 feature_flags:
-  enable_segmentation_export: False
+  enable_segmentation_export: True
+
+reporting:
+  # The directory where processing reports will be saved.
+  output_directory: "/mnt/shared"
