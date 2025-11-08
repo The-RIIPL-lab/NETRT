@@ -29,6 +29,7 @@ class DicomListener:
         self.file_system_manager = file_system_manager
         self.config = config if config is not None else {}
         self.ae = AE(ae_title=self.ae_title)
+        self.study_senders = {}
         self._configure_ae()
 
     def _configure_ae(self):
@@ -74,6 +75,13 @@ class DicomListener:
             if not hasattr(dataset, "StudyInstanceUID") or not dataset.StudyInstanceUID:
                 logger.error("Received dataset missing StudyInstanceUID. Rejecting store.")
                 return 0xA700  # Out of Resources - Or a more specific error
+
+            study_instance_uid = dataset.StudyInstanceUID
+            if study_instance_uid not in self.study_senders:
+                self.study_senders[study_instance_uid] = {
+                    "ip": event.assoc.requestor.address,
+                    "ae_title": event.assoc.requestor.ae_title,
+                }
 
             # Use FileSystemManager to get the path for storing the file
             file_path = self.file_system_manager.save_incoming_dicom(

@@ -6,6 +6,7 @@ import pydicom
 from .dicom_sender import DicomSender
 from .burn_in_processor import BurnInProcessor
 from .contour_processor import ContourProcessor
+from .report_generator import ReportGenerator
 from DicomAnonymizer import DicomAnonymizer
 
 logger = logging.getLogger(__name__)
@@ -21,47 +22,70 @@ class StudyProcessor:
         self.contour_processor = ContourProcessor(self.config)
         self.burn_in_processor = BurnInProcessor(self.config.get("processing", {}).get("burn_in_text"))
 
-    def process_study(self, study_instance_uid):
+    def process_study(self, study_instance_uid, sender_info=None):
         """Main entry point for processing a study."""
+        if sender_info is None:
+            sender_info = {}
+        report = ReportGenerator(self.config, study_instance_uid, sender_info)
         study_path = self.fsm.get_study_path(study_instance_uid)
         processing_start_time = time.time()
         transaction_logger.info(f"PROCESSING_START StudyUID: {study_instance_uid}, Path: {study_path}")
         logger.info(f"Starting processing for study: {study_instance_uid}")
+        report.add_line(f"Processing started at: {datetime.datetime.fromtimestamp(processing_start_time)}")
 
         try:
             dcm_path, struct_path, addition_path = self._setup_paths(study_path)
 
+            num_dicom_files = len([f for f in os.listdir(dcm_path) if f.lower().endswith('.dcm')])
+            report.add_line(f"Number of DICOM files received: {num_dicom_files}")
+
             if not self._validate_inputs(dcm_path, study_instance_uid):
+                report.add_error("Input validation failed: Missing or empty DCM directory")
+                report.write_report()
                 return False
 
             struct_file = self._find_struct_file(struct_path)
+            report.add_line(f"RTSTRUCT file found: {struct_file}")
 
             if self.config.get("anonymization", {}).get("enabled", True):
+                report.add_line("Anonymization enabled. Anonymizing study...")
                 self._anonymize_study(dcm_path, struct_file)
+                report.add_line("Anonymization complete.")
 
             if struct_file:
+                report.add_line("Contour processing started...")
                 success, debug_dicom_dir = self.contour_processor.run(
-                    dcm_path, struct_file, addition_path, 
+                    dcm_path, struct_file, addition_path,
                     self.config.get('debug_mode', False), study_instance_uid
                 )
                 if not success:
                     raise Exception("Contour processing failed")
+                report.add_line("Contour processing successful.")
 
                 if self.config.get("processing", {}).get("add_burn_in_disclaimer", True):
+                    report.add_line("Adding burn-in disclaimer...")
                     self.burn_in_processor.run(addition_path)
-                
+                    report.add_line("Burn-in disclaimer added.")
+
+                report.add_line("Sending processed series...")
                 self._send_directory(addition_path, "OVERLAY", study_instance_uid)
-                
+                report.add_line("Processed series sent successfully.")
+
                 # Send debug DICOM series if created
                 if debug_dicom_dir and os.path.exists(debug_dicom_dir):
+                    report.add_line("Sending debug series...")
                     self._send_directory(debug_dicom_dir, "DEBUG", study_instance_uid)
+                    report.add_line("Debug series sent successfully.")
             else:
                 logger.warning(f"No RTSTRUCT file found for study {study_instance_uid}. Nothing to process or send.")
+                report.add_line("No RTSTRUCT file found. No processing performed.")
 
             self.fsm.cleanup_study_directory(study_instance_uid)
             processing_duration = time.time() - processing_start_time
             logger.info(f"Processing for study {study_instance_uid} completed successfully in {processing_duration:.2f} seconds.")
             transaction_logger.info(f"PROCESSING_SUCCESS StudyUID: {study_instance_uid}, DurationSec: {processing_duration:.2f}")
+            report.add_line(f"\nProcessing successful in {processing_duration:.2f} seconds.")
+            report.write_report()
             return True
 
         except Exception as e:
@@ -69,6 +93,8 @@ class StudyProcessor:
             logger.error(f"Error processing study {study_instance_uid}: {e}", exc_info=True)
             self.fsm.quarantine_study(study_instance_uid, str(e))
             transaction_logger.error(f"PROCESSING_FAILED StudyUID: {study_instance_uid}, DurationSec: {processing_duration:.2f}, Reason: {str(e)}")
+            report.add_error(e)
+            report.write_report()
             return False
 
     def _setup_paths(self, study_path):

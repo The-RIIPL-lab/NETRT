@@ -89,3 +89,7 @@ anonymization:
 
 feature_flags:
   enable_segmentation_export: False
+
+reporting:
+  # The directory where processing reports will be saved.
+  output_directory: "/mnt/shared"
