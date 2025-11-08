@@ -187,7 +187,7 @@ class ContourProcessor:
         ds.add_new(Tag(overlay_group, 0x0011), 'US', ds.Columns)
         ds.add_new(Tag(overlay_group, 0x0015), 'IS', '1') # Number of Frames in Overlay
         ds.add_new(Tag(overlay_group, 0x0040), 'CS', 'R') # ROI Area
-        ds.add_new(Tag(overlay_group, 0x0050), 'SS', [ds.Rows // 2, ds.Columns // 2]) # Overlay Origin
+        ds.add_new(Tag(overlay_group, 0x0050), 'SS', [1, 1]) # Overlay Origin
         ds.add_new(Tag(overlay_group, 0x0100), 'US', 1) # Bits Allocated
         ds.add_new(Tag(overlay_group, 0x0102), 'US', 0) # Bit Position
         ds.add_new(Tag(overlay_group, 0x3000), 'OW', pack_bits(mask_slice))
