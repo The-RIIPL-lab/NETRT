@@ -10,7 +10,7 @@ dicom_destination:
   # IP address of the remote DICOM destination
   ip: 192.168.1.115
   # TCP port of the remote DICOM destination
-  port: 11114
+  port: 11112
   # AE Title of the remote DICOM destination
   ae_title: MICRODICOM
 

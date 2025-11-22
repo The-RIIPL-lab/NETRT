@@ -28,7 +28,7 @@ class ContourProcessor:
         """
         self.processing_config = config.get("processing", {})
 
-    def run(self, dcm_path, struct_path, output_path, debug_mode=False, study_uid=None):
+    def run(self, dcm_path, struct_path, output_path, debug_mode=False, study_uid=None, burn_in_text=None):
         """
         Executes the full contour processing pipeline.
         """
@@ -47,9 +47,9 @@ class ContourProcessor:
                 # For debug visualization, get individual contours for colored display
                 individual_contours = self._get_individual_contours(rt_struct)
                 # Create JPG debug images with colored contours
-                self.save_debug_visualization(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN")
+                self.save_debug_visualization(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN", burn_in_text=burn_in_text)
                 # Create DICOM debug series with colored contours
-                debug_dicom_dir = self.create_debug_dicom_series(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN")
+                debug_dicom_dir = self.create_debug_dicom_series(dcm_path, individual_contours, os.path.dirname(output_path), study_uid or "UNKNOWN", burn_in_text=burn_in_text)
 
             return True, debug_dicom_dir  # Return debug dir path for sending
         except Exception as e:
@@ -57,7 +57,7 @@ class ContourProcessor:
             return False, None
 
     def _create_first_contour_mask(self, rt_struct):
-        """Creates a binary mask from only the first non-SKULL contour."""
+        """Creates a binary mask from the first valid non-SKULL contour."""
         all_rois = rt_struct.get_roi_names()
         ignore_terms = self.processing_config.get("ignore_contour_names_containing", ["skull"])
         rois_to_process = [r for r in all_rois if not any(term.lower() in r.lower() for term in ignore_terms)]
@@ -69,16 +69,17 @@ class ContourProcessor:
         if not rois_to_process:
             raise ValueError("No contours left to process after filtering.")
 
-        # Use only the FIRST contour for overlay plane
-        first_roi = rois_to_process[0]
-        logger.info(f"Using FIRST contour for overlay plane: {first_roi}")
+        for roi in rois_to_process:
+            try:
+                logger.info(f"Attempting to use contour for overlay plane: {roi}")
+                mask_3d = rt_struct.get_roi_mask_by_name(roi)
+                logger.info(f"Successfully used contour for overlay plane: {roi}")
+                return mask_3d
+            except Exception as e:
+                logger.warning(f"Could not get mask for ROI '{roi}'. Trying next. Error: {e}")
 
-        try:
-            mask_3d = rt_struct.get_roi_mask_by_name(first_roi)
-            return np.flip(mask_3d, axis=2)  # Flip mask to match slice order
-        except Exception as e:
-            logger.error(f"Could not get mask for first ROI '{first_roi}': {e}")
-            raise
+        logger.error("No valid contours found to create an overlay.")
+        raise ValueError("No valid contours found to create an overlay.")
 
     def _get_individual_contours(self, rt_struct):
         """Returns a list of individual contour masks for multi-color visualization."""
@@ -92,8 +93,7 @@ class ContourProcessor:
         for roi in rois_to_process:
             try:
                 mask_3d = rt_struct.get_roi_mask_by_name(roi)
-                flipped_mask = np.flip(mask_3d, axis=2)  # Flip to match slice order
-                contour_list.append({'name': roi, 'mask': flipped_mask})
+                contour_list.append({'name': roi, 'mask': mask_3d})
             except Exception as e:
                 logger.warning(f"Could not get mask for ROI '{roi}'. Skipping. Error: {e}")
 
@@ -123,26 +123,29 @@ class ContourProcessor:
             except Exception as e:
                 logger.warning(f"Could not get mask for ROI '{roi}'. Skipping. Error: {e}")
 
-        return np.flip(merged_mask, axis=2) # Flip mask to match slice order
+        return merged_mask
 
     def _sort_dicom_files(self, dcm_path):
-        """Sorts DICOM files in a directory by InstanceNumber."""
+        """Sorts DICOM files in a directory by SliceLocation."""
         files = [f for f in os.listdir(dcm_path) if f.lower().endswith('.dcm')]
         
-        def get_sort_key(filename):
+        dicom_files_with_location = []
+        for filename in files:
             try:
-                return int(re.findall(r'\d+', filename)[-1])
-            except (IndexError, ValueError):
-                try:
-                    full_path = os.path.join(dcm_path, filename)
-                    dcm = dcmread(full_path, stop_before_pixels=True)
-                    return dcm.InstanceNumber
-                except Exception as e:
-                    logger.warning(f"Could not determine sort key for {filename}: {e}. It will be sorted last.")
-                    return float('inf')
+                full_path = os.path.join(dcm_path, filename)
+                dcm = dcmread(full_path, stop_before_pixels=True)
+                if hasattr(dcm, 'SliceLocation'):
+                    dicom_files_with_location.append((dcm.SliceLocation, filename))
+                else:
+                    logger.warning(f"File {filename} has no SliceLocation, cannot sort it correctly.")
+            except Exception as e:
+                logger.warning(f"Could not read {filename} to get SliceLocation: {e}")
 
-        files.sort(key=get_sort_key)
-        return files
+        # Sort by SliceLocation (the first element of the tuple)
+        dicom_files_with_location.sort(key=lambda x: x[0])
+        
+        # Return only the filenames in the correct order
+        return [filename for _, filename in dicom_files_with_location]
 
     def _create_overlay_series(self, dcm_path, mask_3d, output_path):
         """Creates a new DICOM series with the provided mask as an overlay."""
@@ -246,7 +249,7 @@ class ContourProcessor:
         
         return new_ds
     
-    def save_debug_visualization(self, dcm_path, contour_list, output_dir, study_uid):
+    def save_debug_visualization(self, dcm_path, contour_list, output_dir, study_uid, burn_in_text=None):
         """Save debug JPG images showing multiple colored contour overlays on DICOM slices."""
         debug_dir = os.path.join(output_dir, "debug_visualization")
         os.makedirs(debug_dir, exist_ok=True)
@@ -291,6 +294,9 @@ class ContourProcessor:
                 ax.set_title(title_text, fontsize=8)
                 ax.axis('off')
 
+                if burn_in_text:
+                    fig.text(0.01, 0.01, burn_in_text, fontsize=6, color='yellow', ha='left', va='bottom')
+
                 # Save as JPG
                 jpg_filename = f"slice_{i+1:03d}_{filename.replace('.dcm', '.jpg')}"
                 jpg_path = os.path.join(debug_dir, jpg_filename)
@@ -303,7 +309,7 @@ class ContourProcessor:
 
         logger.info(f"Debug visualization complete. Images saved to: {debug_dir}")
 
-    def create_debug_dicom_series(self, dcm_path, contour_list, output_dir, study_uid):
+    def create_debug_dicom_series(self, dcm_path, contour_list, output_dir, study_uid, burn_in_text=None):
         """Create a DICOM Secondary Capture series from debug visualizations with colored contours."""
         debug_dicom_dir = os.path.join(output_dir, "DebugDicom")
         os.makedirs(debug_dicom_dir, exist_ok=True)
@@ -349,6 +355,9 @@ class ContourProcessor:
 
                 ax.axis('off')
                 fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+
+                if burn_in_text:
+                    fig.text(0.01, 0.01, burn_in_text, fontsize=6, color='yellow', ha='left', va='bottom')
 
                 # Robust method to get RGB array - works across matplotlib versions
                 from io import BytesIO

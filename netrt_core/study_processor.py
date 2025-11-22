@@ -55,9 +55,11 @@ class StudyProcessor:
 
             if struct_file:
                 report.add_line("Contour processing started...")
+                burn_in_text = self.config.get("processing", {}).get("burn_in_text")
                 success, debug_dicom_dir = self.contour_processor.run(
                     dcm_path, struct_file, addition_path,
-                    self.config.get('debug_mode', False), study_instance_uid
+                    self.config.get('debug_mode', False), study_instance_uid,
+                    burn_in_text=burn_in_text
                 )
                 if not success:
                     raise Exception("Contour processing failed")
