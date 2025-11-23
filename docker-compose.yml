@@ -1,12 +1,17 @@
 services:
-  netrt:
-    build: .
-    container_name: rabarcu/riipl_netrt:latest
+  connect:
+    build:
+      context: .
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    container_name: connect
     restart: unless-stopped
     ports:
       # Maps the host port (left) to the container port (right) for the DICOM listener.
       # Ensure the right-side port (11116) matches the 'port' in your config.yaml.
       - "11116:11116"
+    command: python main.py --config /app/config/config.yaml --debug
     volumes:
       # Mounts the local config.yaml file as read-only into the container.
       # The container's CMD is set to look for the config at this path.
@@ -15,12 +20,14 @@ services:
       # Mounts a local directory for the application's working data.
       # This path should correspond to the 'directories.working' path in your config.yaml,
       # but pointing to the path *inside* the container (e.g., /home/appuser/CNCT_working).
-      - /DATA/netrt_data/working:/home/appuser/CNCT_working
+      - ./data/working:/home/appuser/CNCT_working
 
       # Mounts a local directory for persistent log files.
       # This path should correspond to the 'directories.logs' path in your config.yaml,
-      # but pointing to the path *inside* the container (e.g., /home/appuser/CNCT_logs).
-      - /DATA/netrt_data/logs:/home/appuser/CNCT_logs
+      - ./data/logs:/home/appuser/CNCT_logs
+      
+      # Mounts a local directory for the output data.
+      - ./data/output:/mnt/shared
 
 networks:
   default:

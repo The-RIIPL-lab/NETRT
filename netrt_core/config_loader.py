@@ -8,7 +8,7 @@ DEFAULT_CONFIG = {
     "dicom_listener": {
         "host": "0.0.0.0",
         "port": 11112,
-        "ae_title": "NETRTCORE",
+        "ae_title": "CONNECT",
         "config_negotiated_transfer_syntax": True # New: to control if negotiated TS is used for saving
     },
     "dicom_destination": {

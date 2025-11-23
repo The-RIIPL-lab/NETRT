@@ -2,11 +2,15 @@
 FROM python:3.11-slim-bullseye
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Create a non-root user and group
-RUN groupadd -r appgroup && useradd --no-log-init -r -g appgroup appuser
+# Arguments for user and group IDs
+ARG UID=1000
+ARG GID=1000
+
+# Create a non-root user and group with specified IDs
+RUN groupadd -g ${GID} -r appgroup && useradd --no-log-init -u ${UID} -g ${GID} -r appuser
 
 # Install system dependencies required by rt-utils or other libraries
 # libglib2.0-0, libsm6, libxrender1, libxext6, libgl1 are common for image processing/GUI libs
@@ -34,17 +38,14 @@ COPY . .
 # Create default directories for logs and working data and set ownership
 # These paths should match the defaults in config_loader.py if config is not mounted
 # Or, they serve as mount points if volumes are used.
-RUN mkdir -p /home/appuser/CNCT_logs /home/appuser/CNCT_working /app/config && \
-    chown -R appuser:appgroup /home/appuser/CNCT_logs && \
-    chown -R appuser:appgroup /home/appuser/CNCT_working && \
-    chown -R appuser:appgroup /app && \
-    chown -R appuser:appgroup /app/config
+RUN mkdir -p /home/appuser/CNCT_logs /home/appuser/CNCT_working /app/config /mnt/shared && \
+    chown -R appuser:appgroup  /home/appuser /home/appuser/CNCT_logs /home/appuser/CNCT_working /app
 
 # Switch to the non-root user
 USER appuser
 
 # Define mount points for persistent data and configuration
-VOLUME ["/home/appuser/CNCT_logs", "/home/appuser/CNCT_working", "/app/config"]
+VOLUME ["/home/appuser/CNCT_logs", "/home/appuser/CNCT_working", "/app/config", "/mnt/shared"]
 
 # Define the command to run the application
 # It expects config.yaml to be in /app/config/config.yaml

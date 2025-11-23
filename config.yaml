@@ -92,4 +92,4 @@ feature_flags:
 
 reporting:
   # The directory where processing reports will be saved.
-  output_directory: "/mnt/shared"
+  output_directory: "/mnt/shared" # default OVA location

@@ -16,6 +16,7 @@ class ReportGenerator:
     def _get_report_path(self):
         """Gets the full path for the report file."""
         report_dir = self.config.get("reporting", {}).get("output_directory", "/mnt/shared")
+
         os.makedirs(report_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"report_{self.study_instance_uid}_{timestamp}.txt"
