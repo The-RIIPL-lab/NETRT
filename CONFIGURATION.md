@@ -67,9 +67,10 @@ processing:
 ```yaml
 anonymization:
   enabled: true                      # Enable/disable anonymization
-  full_anonymization_enabled: false # Use comprehensive anonymization
+  site_code: "WFU"                   # Site-specific code for PID generation
+  pid_mapping_file: "/mnt/shared/pid_mapping.json"  # Path to PID mapping file
   
-  # Standard anonymization rules
+  # Anonymization rules
   rules:
     remove_tags:                     # Tags to completely remove
       - "AccessionNumber"
@@ -78,16 +79,15 @@ anonymization:
       - "OtherPatientIDs"
       - "PatientBirthDate"
     blank_tags: []                   # Tags to set to empty string
-    generate_random_id_prefix: ""    # Prefix for generated IDs
 ```
 
-When `full_anonymization_enabled` is true, comprehensive anonymization rules are applied including date/time modification and UID regeneration.
+When `enabled` is true, the specified tags are removed, and a consistent, anonymized Patient ID is generated using the `site_code` and `pid_mapping_file`.
 
 ### File System Watcher
 
 ```yaml
 watcher:
-  debounce_interval_seconds: 5       # Wait time after last file activity
+  debounce_interval_seconds: 60       # Wait time after last file activity
   min_file_count_for_processing: 2   # Minimum files before processing
 ```
 

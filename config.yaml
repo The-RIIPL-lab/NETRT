@@ -15,7 +15,7 @@ dicom_destination:
   ae_title: RADIORIIPL
   
 watcher:
-  debounce_interval_seconds: 30
+  debounce_interval_seconds: 60
   min_file_count_for_processing: 10
 
 processing:
@@ -61,10 +61,6 @@ processing:
 
 anonymization:
   enabled: true
-  full_anonymization_enabled: true
-
-  # Consistent PID settings
-  use_consistent_pid: true
   site_code: "WFU"  # Change this for each site/institution
   pid_mapping_file: "/mnt/shared/pid_mapping.json"  # Persists on host
 

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class DicomAnonymizer:
     """
     A class to anonymize DICOM files according to NEMA standards while preserving
-    image viewing capabilities. Supports configurable anonymization levels.
+    image viewing capabilities.
     """
     
     def __init__(self, anonymization_config=None):
@@ -22,95 +22,12 @@ class DicomAnonymizer:
             anonymization_config (dict): Configuration for anonymization settings
         """
         self.config = anonymization_config or {}
+        self.pid_manager = PIDManager(self.config)
         
-        # Initialize PID Manager if consistent PIDs are enabled
-        if self.config.get("use_consistent_pid", False):
-            self.pid_manager = PIDManager(self.config)
-        else:
-            self.pid_manager = None
-        
-        # Set default config if not provided
-        if not self.config:
-            self.config = {
-                "enabled": True,
-                "full_anonymization_enabled": False,
-                "rules": {
-                    "remove_tags": ["AccessionNumber", "PatientID"],
-                    "blank_tags": [],
-                    "generate_random_id_prefix": ""
-                }
-            }
-        
-        # Get full anonymization flag
-        self.full_anonymization = self.config.get("full_anonymization_enabled", False)
-        
-        # Define tags to remove or blank based on anonymization level
-        if self.full_anonymization:
-            # Full anonymization - comprehensive list
-            self.tags_to_remove = [
-                'PatientName',
-                'PatientID',
-                'PatientBirthDate',
-                'PatientSex',
-                'PatientAge',
-                'PatientWeight',
-                'PatientAddress',
-                'PatientTelephoneNumbers',
-                'PatientMotherBirthName',
-                'OtherPatientIDs',
-                'OtherPatientNames',
-                'PatientBirthName',
-                'PatientSize',
-                'MilitaryRank',
-                'BranchOfService',
-                'EthnicGroup',
-                'PatientComments',
-                'DeviceSerialNumber',
-                'PlateID',
-                'InstitutionName',
-                'InstitutionAddress',
-                'ReferringPhysicianName',
-                'ReferringPhysicianAddress',
-                'ReferringPhysicianTelephoneNumbers',
-                'PhysiciansOfRecord',
-                'OperatorsName',
-                'AdmittingDiagnosesDescription'
-            ]
-            
-            self.tags_to_empty = [
-                'AccessionNumber',
-                'StudyID',
-                'PerformingPhysicianName',
-                'RequestingPhysician'
-            ]
-        else:
-            # Partial anonymization - only remove specific tags from config
-            self.tags_to_remove = self.config.get("rules", {}).get("remove_tags", ["AccessionNumber", "PatientID"])
-            self.tags_to_empty = self.config.get("rules", {}).get("blank_tags", [])
-        
-        # Ensure AccessionNumber is always removed or emptied regardless of anonymization setting
-        if "AccessionNumber" not in self.tags_to_remove and "AccessionNumber" not in self.tags_to_empty:
-            self.tags_to_remove.append("AccessionNumber")
-        
-        # Tags that need special handling if doing full anonymization
-        self.special_tags = {}
-        if self.full_anonymization:
-            self.special_tags = {
-                'StudyDate': self._handle_date,
-                'SeriesDate': self._handle_date,
-                'AcquisitionDate': self._handle_date,
-                'ContentDate': self._handle_date,
-                'StudyTime': self._handle_time,
-                'SeriesTime': self._handle_time,
-                'AcquisitionTime': self._handle_time,
-                'ContentTime': self._handle_time
-            }
-        
-        # Get the custom ID prefix if specified
-        self.id_prefix = self.config.get("rules", {}).get("generate_random_id_prefix", "")
+        self.tags_to_remove = self.config.get("rules", {}).get("remove_tags", [])
+        self.tags_to_empty = self.config.get("rules", {}).get("blank_tags", [])
         
         logger.debug(f"DicomAnonymizer initialized with config: {self.config}")
-        logger.debug(f"Full anonymization enabled: {self.full_anonymization}")
         logger.debug(f"Tags to remove: {self.tags_to_remove}")
         logger.debug(f"Tags to empty: {self.tags_to_empty}")
 
@@ -124,77 +41,36 @@ class DicomAnonymizer:
         Returns:
             pydicom.dataset.FileDataset: Anonymized DICOM object
         """
-        # Ensure we're working with a DICOM object
         if not isinstance(dicom_obj, pydicom.dataset.Dataset):
             logger.error("Object provided for anonymization is not a pydicom Dataset")
             return dicom_obj
         
-        # Get consistent anonymized ID if enabled (takes priority over full_anonymization)
-        anonymized_id_applied = False
-        if self.pid_manager:
-            original_patient_id = getattr(dicom_obj, 'PatientID', '')
-            original_patient_name = str(getattr(dicom_obj, 'PatientName', ''))
-            study_date = getattr(dicom_obj, 'StudyDate', None)
-            
-            anonymized_id = self.pid_manager.get_anonymized_id(
-                original_patient_id, 
-                original_patient_name,
-                study_date
-            )
-            
-            # Set the anonymized ID
-            dicom_obj.PatientID = anonymized_id
-            dicom_obj.PatientName = anonymized_id
-            anonymized_id_applied = True
-            
-            logger.debug(f"Applied consistent anonymized ID: {anonymized_id}")
+        original_patient_id = getattr(dicom_obj, 'PatientID', '')
+        original_patient_name = str(getattr(dicom_obj, 'PatientName', ''))
+        study_date = getattr(dicom_obj, 'StudyDate', None)
         
-        # Remove identifiable tags (but skip PatientID/PatientName if PID was applied)
+        anonymized_id = self.pid_manager.get_anonymized_id(
+            original_patient_id, 
+            original_patient_name,
+            study_date
+        )
+        
+        dicom_obj.PatientID = anonymized_id
+        dicom_obj.PatientName = anonymized_id
+        
+        logger.debug(f"Applied consistent anonymized ID: {anonymized_id}")
+        
         for tag in self.tags_to_remove:
-            if anonymized_id_applied and tag in ['PatientID', 'PatientName']:
-                continue  # Skip - already handled by PID manager
+            if tag in ['PatientID', 'PatientName']:
+                continue
             if hasattr(dicom_obj, tag):
                 delattr(dicom_obj, tag)
         
-        # Empty specified tags
         for tag in self.tags_to_empty:
-            if anonymized_id_applied and tag in ['PatientID', 'PatientName']:
-                continue  # Skip - already handled by PID manager
+            if tag in ['PatientID', 'PatientName']:
+                continue
             if hasattr(dicom_obj, tag):
                 setattr(dicom_obj, tag, '')
-        
-        # Handle special tags if doing full anonymization
-        if self.full_anonymization:
-            for tag, handler in self.special_tags.items():
-                if hasattr(dicom_obj, tag):
-                    setattr(dicom_obj, tag, handler(getattr(dicom_obj, tag)))
-            
-            # Generate new UIDs
-            if hasattr(dicom_obj, 'StudyInstanceUID'):
-                dicom_obj.StudyInstanceUID = self._generate_uid(dicom_obj.StudyInstanceUID)
-            
-            if hasattr(dicom_obj, 'SeriesInstanceUID'):
-                dicom_obj.SeriesInstanceUID = self._generate_uid(dicom_obj.SeriesInstanceUID)
-            
-            if hasattr(dicom_obj, 'SOPInstanceUID'):
-                dicom_obj.SOPInstanceUID = self._generate_uid(dicom_obj.SOPInstanceUID)
-            
-            # Only set anonymous patient info if PID manager didn't already handle it
-            if not anonymized_id_applied:
-                if "PatientName" in self.tags_to_remove:
-                    new_patient_id = self._generate_patient_id()
-                    dicom_obj.PatientName = f"{self.id_prefix}ANONYMOUS_{new_patient_id}"
-                    dicom_obj.PatientID = new_patient_id
-        else:
-            # Default behavior for partial anonymization (if PID not used)
-            if not anonymized_id_applied:
-                # Ensure AccessionNumber is always cleared
-                if hasattr(dicom_obj, 'AccessionNumber'):
-                    dicom_obj.AccessionNumber = ""
-                
-                # Ensure PatientID is handled according to config
-                if "PatientID" in self.tags_to_remove and hasattr(dicom_obj, 'PatientID'):
-                    dicom_obj.PatientID = ""
         
         return dicom_obj
 

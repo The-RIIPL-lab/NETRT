@@ -29,7 +29,7 @@ class NewStudyEventHandler(FileSystemEventHandler):
         self.study_processor_callback = study_processor_callback
         # Use a dictionary to track activity in study directories and debounce
         self.study_activity_timers = {}
-        self.debounce_interval = self.fsm.config.get("watcher", {}).get("debounce_interval_seconds", 7 )
+        self.debounce_interval = self.fsm.config.get("watcher", {}).get("debounce_interval_seconds", 60 )
         self.min_file_count_for_processing = self.fsm.config.get("watcher", {}).get("min_file_count_for_processing", 5 )
 
     # ======== Path and Study UID Helper Methods ========

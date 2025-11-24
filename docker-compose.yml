@@ -1,11 +1,11 @@
 services:
-  connect:
+  correct:
     build:
       context: .
       args:
         - UID=${UID:-1000}
         - GID=${GID:-1000}
-    container_name: connect
+    container_name: correct
     restart: unless-stopped
     ports:
       # Maps the host port (left) to the container port (right) for the DICOM listener.

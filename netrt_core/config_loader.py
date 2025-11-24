@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
         "segmentation_tracking_id": "FOR RESEARCH USE ONLY"
     },
     "watcher": {
-        "debounce_interval_seconds": 5,
+        "debounce_interval_seconds": 60,
         "min_file_count_for_processing": 2
     },
     "feature_flags": {
