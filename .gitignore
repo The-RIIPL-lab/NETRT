@@ -9,3 +9,6 @@ UID*
 logs/
 rt-utils*/
 netrt_data/*
+data/working/*
+data/logs/*
+data/output/*

@@ -353,23 +353,27 @@ class FileSystemManager:
     # ======== Directory Watching and Monitoring ========
     
     def start_watching(self):
-        """Start the file system observer to monitor for new studies.
-        
-        This method starts the watchdog observer that detects file system events
-        in the working directory, allowing automatic processing of new studies
-        as they arrive.
-        """
+        """Start the file system observer to monitor for new studies."""
         if self.observer and self.study_processor_callback:
-            # Configure the observer to watch the working directory recursively
+            # Use polling observer for better cross-platform compatibility
+            from watchdog.observers.polling import PollingObserver
+            
+            # Detect if we should use polling (helpful for Docker on Windows)
+            use_polling = os.environ.get('WATCHDOG_USE_POLLING', 'false').lower() == 'true'
+            
+            if use_polling:
+                logger.info("Using PollingObserver for file system monitoring (better for Windows/Docker)")
+                self.observer.stop()  # Stop the regular observer
+                self.observer = PollingObserver()
+            
             self.observer.schedule(self.event_handler, self.working_dir, recursive=True)
             try:
-                # Start the observer thread
                 self.observer.start()
                 logger.info(f"Started watching working directory for new studies: {self.working_dir}")
             except Exception as e:
                 logger.error(f"Failed to start watchdog observer: {e}", exc_info=True)
         elif not self.study_processor_callback:
-             logger.error("Cannot start watching: study_processor_callback was not provided during FSM initialization.")
+            logger.error("Cannot start watching: study_processor_callback was not provided during FSM initialization.")
         else:
             logger.info("Watchdog observer not configured, not starting.")
 

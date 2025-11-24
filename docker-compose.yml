@@ -12,6 +12,8 @@ services:
       # Ensure the right-side port (11116) matches the 'port' in your config.yaml.
       - "11116:11116"
     command: python main.py --config /app/config/config.yaml --debug
+    environment:
+      - WATCHDOG_USE_POLLING=true
     volumes:
       # Mounts the local config.yaml file as read-only into the container.
       # The container's CMD is set to look for the config at this path.
