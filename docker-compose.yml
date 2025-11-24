@@ -9,27 +9,27 @@ services:
     restart: unless-stopped
     ports:
       # Maps the host port (left) to the container port (right) for the DICOM listener.
-      # Ensure the right-side port (11116) matches the 'port' in your config.yaml.
+      # Ensure the right-side port matches the 'port' in your config.yaml.
       - "11112:11112"
     command: python main.py --config /app/config/config.yaml --debug
     environment:
-      - WATCHDOG_USE_POLLING=true
+      - WATCHDOG_USE_POLLING=false
     volumes:
       # Mounts the local config.yaml file as read-only into the container.
       # The container's CMD is set to look for the config at this path.
-      - /home/richard/NETRT/config.yaml:/app/config/config.yaml:ro
+      - ~/NETRT/config.yaml:/app/config/config.yaml:ro
 
       # Mounts a local directory for the application's working data.
       # This path should correspond to the 'directories.working' path in your config.yaml,
       # but pointing to the path *inside* the container (e.g., /home/appuser/CORRECT_working).
-      - /home/richard/NETRT/data/working:/home/appuser/CORRECT_working:rw,z
+      - ~/NETRT/data/working:/home/appuser/CORRECT_working:rw,z
 
       # Mounts a local directory for persistent log files.
       # This path should correspond to the 'directories.logs' path in your config.yaml,
-      - /home/richard/NETRT/data/logs:/home/appuser/CORRECT_logs:rw,z
+      - ~/NETRT/data/logs:/home/appuser/CORRECT_logs:rw,z
       
       # Mounts a local directory for the output data.
-      - /home/richard/NETRT/data/output:/mnt/shared
+      - ~/NETRT/data/output:/mnt/shared
 
 networks:
   default:
