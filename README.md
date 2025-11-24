@@ -1,6 +1,6 @@
-# NETRT - DICOM RT Structure Processor
+# CORRECT - DICOM RT Structure Processor
 
-NETRT is a DICOM service that automatically processes RT Structure Sets to create contour overlay series. It listens for DICOM studies on a network port, extracts contour data from RTSTRUCT files, merges them into binary masks, and creates new DICOM series with graphical overlays.
+CORRECT is a DICOM service that automatically processes RT Structure Sets to create contour overlay series. It listens for DICOM studies on a network port, extracts contour data from RTSTRUCT files, merges them into binary masks, and creates new DICOM series with graphical overlays.
 
 ## Key Features
 
@@ -33,7 +33,7 @@ NETRT is a DICOM service that automatically processes RT Structure Sets to creat
    dicom_listener:
      host: "0.0.0.0"
      port: 11112
-     ae_title: "NETRT"
+     ae_title: "CORRECT"
    
    dicom_destination:
      ip: "192.168.1.100"

@@ -282,10 +282,10 @@ class FileSystemManager:
             study_processor_callback (callable): Callback for when a new study is ready.
         """
         self.config = config
-        self.working_dir = os.path.expanduser(config.get("directories", {}).get("working", "~/CNCT_working"))
+        self.working_dir = os.path.expanduser(config.get("directories", {}).get("working", "~/CORRECT_working"))
         self.quarantine_subdir = config.get("directories", {}).get("quarantine_subdir", "quarantine")
         self.quarantine_dir = os.path.join(self.working_dir, self.quarantine_subdir)
-        self.logs_dir = os.path.expanduser(config.get("directories", {}).get("logs", "~/CNCT_logs"))
+        self.logs_dir = os.path.expanduser(config.get("directories", {}).get("logs", "~/CORRECT_logs"))
 
         # Add a lock dictionary to track processing studies
         self.processing_locks = {}

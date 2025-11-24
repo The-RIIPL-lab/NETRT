@@ -4,6 +4,7 @@ import pydicom
 import tempfile
 import os
 import shutil
+from netrt_core.pid_manager import PIDManager
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,12 @@ class DicomAnonymizer:
             anonymization_config (dict): Configuration for anonymization settings
         """
         self.config = anonymization_config or {}
+        
+        # Initialize PID Manager if consistent PIDs are enabled
+        if self.config.get("use_consistent_pid", False):
+            self.pid_manager = PIDManager(self.config)
+        else:
+            self.pid_manager = None
         
         # Set default config if not provided
         if not self.config:
@@ -122,13 +129,37 @@ class DicomAnonymizer:
             logger.error("Object provided for anonymization is not a pydicom Dataset")
             return dicom_obj
         
-        # Remove identifiable tags
+        # Get consistent anonymized ID if enabled (takes priority over full_anonymization)
+        anonymized_id_applied = False
+        if self.pid_manager:
+            original_patient_id = getattr(dicom_obj, 'PatientID', '')
+            original_patient_name = str(getattr(dicom_obj, 'PatientName', ''))
+            study_date = getattr(dicom_obj, 'StudyDate', None)
+            
+            anonymized_id = self.pid_manager.get_anonymized_id(
+                original_patient_id, 
+                original_patient_name,
+                study_date
+            )
+            
+            # Set the anonymized ID
+            dicom_obj.PatientID = anonymized_id
+            dicom_obj.PatientName = anonymized_id
+            anonymized_id_applied = True
+            
+            logger.debug(f"Applied consistent anonymized ID: {anonymized_id}")
+        
+        # Remove identifiable tags (but skip PatientID/PatientName if PID was applied)
         for tag in self.tags_to_remove:
+            if anonymized_id_applied and tag in ['PatientID', 'PatientName']:
+                continue  # Skip - already handled by PID manager
             if hasattr(dicom_obj, tag):
                 delattr(dicom_obj, tag)
         
         # Empty specified tags
         for tag in self.tags_to_empty:
+            if anonymized_id_applied and tag in ['PatientID', 'PatientName']:
+                continue  # Skip - already handled by PID manager
             if hasattr(dicom_obj, tag):
                 setattr(dicom_obj, tag, '')
         
@@ -138,35 +169,32 @@ class DicomAnonymizer:
                 if hasattr(dicom_obj, tag):
                     setattr(dicom_obj, tag, handler(getattr(dicom_obj, tag)))
             
-            # Generate a new StudyInstanceUID
+            # Generate new UIDs
             if hasattr(dicom_obj, 'StudyInstanceUID'):
                 dicom_obj.StudyInstanceUID = self._generate_uid(dicom_obj.StudyInstanceUID)
             
-            # Generate a new SeriesInstanceUID
             if hasattr(dicom_obj, 'SeriesInstanceUID'):
                 dicom_obj.SeriesInstanceUID = self._generate_uid(dicom_obj.SeriesInstanceUID)
             
-            # Keep SOPInstanceUID but hash it
             if hasattr(dicom_obj, 'SOPInstanceUID'):
                 dicom_obj.SOPInstanceUID = self._generate_uid(dicom_obj.SOPInstanceUID)
             
-            # Set PatientName to anonymous if it was removed
-            # Note: We need to create a new attribute after deleting it
-            if "PatientName" in self.tags_to_remove:
-                new_patient_id = self._generate_patient_id()
-                dicom_obj.PatientName = f"{self.id_prefix}ANONYMOUS_{new_patient_id}"
-                
-                # Also set a new PatientID that matches the anonymous name
-                dicom_obj.PatientID = new_patient_id
+            # Only set anonymous patient info if PID manager didn't already handle it
+            if not anonymized_id_applied:
+                if "PatientName" in self.tags_to_remove:
+                    new_patient_id = self._generate_patient_id()
+                    dicom_obj.PatientName = f"{self.id_prefix}ANONYMOUS_{new_patient_id}"
+                    dicom_obj.PatientID = new_patient_id
         else:
-            # Default behavior for partial anonymization
-            # Ensure AccessionNumber is always cleared even if not in remove list
-            if hasattr(dicom_obj, 'AccessionNumber'):
-                dicom_obj.AccessionNumber = ""
-            
-            # Ensure PatientID is handled according to config
-            if "PatientID" in self.tags_to_remove and hasattr(dicom_obj, 'PatientID'):
-                dicom_obj.PatientID = ""
+            # Default behavior for partial anonymization (if PID not used)
+            if not anonymized_id_applied:
+                # Ensure AccessionNumber is always cleared
+                if hasattr(dicom_obj, 'AccessionNumber'):
+                    dicom_obj.AccessionNumber = ""
+                
+                # Ensure PatientID is handled according to config
+                if "PatientID" in self.tags_to_remove and hasattr(dicom_obj, 'PatientID'):
+                    dicom_obj.PatientID = ""
         
         return dicom_obj
 

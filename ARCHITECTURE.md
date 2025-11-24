@@ -92,7 +92,7 @@ All settings are managed through a single `config.yaml` file covering:
 ## Directory Structure
 
 ```
-~/CNCT_working/                    # Working directory
+~/CORRECT_working/                    # Working directory
 ├── UID_<StudyUID>/                # Individual study processing
 │   ├── DCM/                       # Original images
 │   ├── Structure/                 # RTSTRUCT files
@@ -100,7 +100,7 @@ All settings are managed through a single `config.yaml` file covering:
 │   └── DebugDicom/               # Debug visualization (optional)
 └── quarantine/                    # Failed studies
 
-~/CNCT_logs/                       # Log files
+~/CORRECT_logs/                       # Log files
 ├── application.log                # General application events
 └── transaction.log               # Study processing transactions
 ```

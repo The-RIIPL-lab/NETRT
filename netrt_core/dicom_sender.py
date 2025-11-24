@@ -50,7 +50,7 @@ class DicomSender:
             JPEG2000Lossless
         ]
         
-        # Common storage SOP classes that NETRT is likely to work with
+        # Common storage SOP classes that CORRECT is likely to work with
         common_storage_classes = [
             CTImageStorage,
             MRImageStorage,

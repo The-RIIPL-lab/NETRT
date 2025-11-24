@@ -48,7 +48,7 @@ def main():
     dicom_listener = DicomListener(
         host=config.get("dicom_listener", {}).get("host", "0.0.0.0"),
         port=config.get("dicom_listener", {}).get("port", 11112),
-        ae_title=config.get("dicom_listener", {}).get("ae_title", "CNCT"),
+        ae_title=config.get("dicom_listener", {}).get("ae_title", "CORRECT"),
         study_processor_callback=None, # No longer directly used
         file_system_manager=file_system_manager,
     )

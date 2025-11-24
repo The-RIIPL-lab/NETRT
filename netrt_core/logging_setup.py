@@ -13,7 +13,7 @@ def setup_logging(config):
     
     log_level = getattr(logging, log_level_str, logging.INFO)
     
-    logs_dir = os.path.expanduser(config.get("directories", {}).get("logs", "~/CNCT_logs"))
+    logs_dir = os.path.expanduser(config.get("directories", {}).get("logs", "~/CORRECT_logs"))
     app_log_filename = log_config.get("application_log_file", "application.log")
     trans_log_filename = log_config.get("transaction_log_file", "transaction.log")
 

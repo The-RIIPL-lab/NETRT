@@ -27,8 +27,8 @@ dicom_destination:
 
 ```yaml
 directories:
-  working: "~/CNCT_working"          # Study processing directory
-  logs: "~/CNCT_logs"                # Log file directory
+  working: "~/CORRECT_working"          # Study processing directory
+  logs: "~/CORRECT_logs"                # Log file directory
   quarantine_subdir: "quarantine"   # Quarantine subdirectory name
 ```
 
@@ -119,7 +119,7 @@ logging:
 If configuration sections are missing, the following defaults apply:
 
 - **DICOM Listener**: Listens on all interfaces (0.0.0.0) port 11112
-- **Working Directory**: `~/CNCT_working`
+- **Working Directory**: `~/CORRECT_working`
 - **Anonymization**: Enabled, removes AccessionNumber and PatientID
 - **Processing**: Ignores contours containing "skull", adds burn-in disclaimer
 - **Logging**: INFO level to both console and files
@@ -130,7 +130,7 @@ If configuration sections are missing, the following defaults apply:
 dicom_listener:
   host: "152.11.105.71"
   port: 11116
-  ae_title: "CNCT_DEV"
+  ae_title: "CORRECT_DEV"
 
 dicom_destination:
   ip: "152.11.105.71"

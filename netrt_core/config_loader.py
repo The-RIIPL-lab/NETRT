@@ -17,8 +17,8 @@ DEFAULT_CONFIG = {
         "ae_title": "DEST_AET"
     },
     "directories": {
-        "working": "~/CNCT_working",
-        "logs": "~/CNCT_logs",
+        "working": "~/CORRECT_working",
+        "logs": "~/CORRECT_logs",
         "quarantine_subdir": "quarantine"
     },
     "logging": {

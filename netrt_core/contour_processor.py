@@ -12,6 +12,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import ListedColormap
+import tempfile
+import shutil
 matplotlib.use('Agg')
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,9 @@ class ContourProcessor:
         """
         try:
             os.makedirs(output_path, exist_ok=True)
+            
+            self._ensure_images_have_orientation(dcm_path, struct_path)
+            
             rt_struct = RTStructBuilder.create_from(
                 dicom_series_path=dcm_path,
                 rt_struct_path=struct_path
@@ -55,6 +60,113 @@ class ContourProcessor:
         except Exception as e:
             logger.error(f"Failed during contour processing: {e}", exc_info=True)
             return False, None
+    
+    def _ensure_images_have_orientation(self, dcm_path, struct_path):
+        """
+        Ensure all DICOM files (CT images and RTSTRUCT) have required spatial tags.
+        If missing, use defaults or infer from other images.
+        
+        Args:
+            dcm_path: Path to directory containing CT images
+            struct_path: Path to RTSTRUCT file
+        """
+        default_orientation = [1, 0, 0, 0, 1, 0]  # Standard axial orientation
+        
+        # First, try to find orientation from any existing CT image that has it
+        orientation = None
+        ct_files = [f for f in os.listdir(dcm_path) if f.lower().endswith('.dcm')]
+        
+        logger.info(f"Checking {len(ct_files)} CT images for required spatial tags...")
+        
+        for ct_file in ct_files:
+            try:
+                ct_path = os.path.join(dcm_path, ct_file)
+                ct_ds = dcmread(ct_path, stop_before_pixels=True)
+                if hasattr(ct_ds, 'ImageOrientationPatient'):
+                    orientation = ct_ds.ImageOrientationPatient
+                    logger.info(f"Found ImageOrientationPatient in {ct_file}: {orientation}")
+                    break
+            except Exception as e:
+                logger.debug(f"Could not read {ct_file}: {e}")
+                continue
+        
+        # Use default if not found
+        if orientation is None:
+            orientation = default_orientation
+            logger.warning(f"No CT images have ImageOrientationPatient. Using default axial: {orientation}")
+        
+        # Fix all CT images that are missing the tags
+        files_fixed = 0
+        for ct_file in ct_files:
+            try:
+                ct_path = os.path.join(dcm_path, ct_file)
+                ct_ds = dcmread(ct_path)
+                modified = False
+                
+                # Check and add ImageOrientationPatient
+                if not hasattr(ct_ds, 'ImageOrientationPatient'):
+                    logger.warning(f"CT image {ct_file} missing ImageOrientationPatient, adding: {orientation}")
+                    ct_ds.ImageOrientationPatient = orientation
+                    modified = True
+                
+                # Check and add ImagePositionPatient
+                if not hasattr(ct_ds, 'ImagePositionPatient'):
+                    # Try to derive from SliceLocation if available
+                    if hasattr(ct_ds, 'SliceLocation'):
+                        position = [0, 0, float(ct_ds.SliceLocation)]
+                        logger.warning(f"CT image {ct_file} missing ImagePositionPatient, deriving from SliceLocation: {position}")
+                    else:
+                        position = [0, 0, 0]
+                        logger.warning(f"CT image {ct_file} missing ImagePositionPatient, using default: {position}")
+                    ct_ds.ImagePositionPatient = position
+                    modified = True
+                
+                # Save if modified
+                if modified:
+                    temp_fd, temp_path = tempfile.mkstemp(dir=dcm_path, prefix=".tmp-ct-")
+                    ct_ds.save_as(temp_path, enforce_file_format=True)
+                    os.close(temp_fd)
+                    shutil.move(temp_path, ct_path)
+                    files_fixed += 1
+                    
+            except Exception as e:
+                logger.error(f"Failed to fix CT image {ct_file}: {e}")
+                if 'temp_path' in locals() and os.path.exists(temp_path):
+                    os.remove(temp_path)
+                continue
+        
+        if files_fixed > 0:
+            logger.info(f"Fixed {files_fixed} CT images with missing spatial tags")
+        
+        # Now fix the RTSTRUCT if needed
+        try:
+            rt_ds = dcmread(struct_path)
+            modified = False
+            
+            if not hasattr(rt_ds, 'ImageOrientationPatient'):
+                logger.warning(f"RTSTRUCT missing ImageOrientationPatient, adding: {orientation}")
+                rt_ds.ImageOrientationPatient = orientation
+                modified = True
+            
+            if not hasattr(rt_ds, 'ImagePositionPatient'):
+                position = [0, 0, 0]
+                logger.warning(f"RTSTRUCT missing ImagePositionPatient, adding: {position}")
+                rt_ds.ImagePositionPatient = position
+                modified = True
+            
+            if modified:
+                temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(struct_path), prefix=".tmp-rtstruct-")
+                rt_ds.save_as(temp_path, enforce_file_format=True)
+                os.close(temp_fd)
+                shutil.move(temp_path, struct_path)
+                logger.info(f"Successfully added missing spatial tags to RTSTRUCT")
+            else:
+                logger.debug(f"RTSTRUCT already has all required spatial tags")
+                
+        except Exception as e:
+            logger.error(f"Failed to fix RTSTRUCT: {e}", exc_info=True)
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def _create_first_contour_mask(self, rt_struct):
         """Creates a binary mask from the first valid non-SKULL contour."""

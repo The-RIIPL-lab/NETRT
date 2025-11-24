@@ -54,16 +54,16 @@ docker run -d \
   --name netrt-instance \
   -p 11112:11112/tcp \
   -v ./config.yaml:/app/config/config.yaml:ro \
-  -v /DATA/netrt_data/working:/home/appuser/CNCT_working \
-  -v /DATA/netrt_data/logs:/home/appuser/CNCT_logs \
+  -v /DATA/netrt_data/working:/home/appuser/CORRECT_working \
+  -v /DATA/netrt_data/logs:/home/appuser/CORRECT_logs \
   --restart unless-stopped \
   netrt-app
 ```
 
 **Volume Mapping**:
 - Configuration: Host config → `/app/config/config.yaml`
-- Working data: Host path → `/home/appuser/CNCT_working`
-- Logs: Host path → `/home/appuser/CNCT_logs`
+- Working data: Host path → `/home/appuser/CORRECT_working`
+- Logs: Host path → `/home/appuser/CORRECT_logs`
 
 ### Container Management
 
@@ -189,10 +189,10 @@ sudo ufw allow out <destination_port>
 **Docker Environment**:
 ```bash
 # View recent application events
-docker compose exec netrt tail -f /home/appuser/CNCT_logs/application.log
+docker compose exec netrt tail -f /home/appuser/CORRECT_logs/application.log
 
 # Monitor transactions
-docker compose exec netrt tail -f /home/appuser/CNCT_logs/transaction.log
+docker compose exec netrt tail -f /home/appuser/CORRECT_logs/transaction.log
 ```
 
 **Systemd Environment**:

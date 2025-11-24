@@ -38,14 +38,14 @@ COPY . .
 # Create default directories for logs and working data and set ownership
 # These paths should match the defaults in config_loader.py if config is not mounted
 # Or, they serve as mount points if volumes are used.
-RUN mkdir -p /home/appuser/CNCT_logs /home/appuser/CNCT_working /app/config /mnt/shared && \
-    chown -R appuser:appgroup  /home/appuser /home/appuser/CNCT_logs /home/appuser/CNCT_working /app
+RUN mkdir -p /home/appuser/CORRECT_logs /home/appuser/CORRECT_working /app/config /mnt/shared && \
+    chown -R appuser:appgroup  /home/appuser /home/appuser/CORRECT_logs /home/appuser/CORRECT_working /app
 
 # Switch to the non-root user
 USER appuser
 
 # Define mount points for persistent data and configuration
-VOLUME ["/home/appuser/CNCT_logs", "/home/appuser/CNCT_working", "/app/config", "/mnt/shared"]
+VOLUME ["/home/appuser/CORRECT_logs", "/home/appuser/CORRECT_working", "/app/config", "/mnt/shared"]
 
 # Define the command to run the application
 # It expects config.yaml to be in /app/config/config.yaml
