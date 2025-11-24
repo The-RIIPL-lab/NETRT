@@ -63,6 +63,7 @@ anonymization:
   enabled: true
   site_code: "WFU"  # Change this for each site/institution
   pid_mapping_file: "/mnt/shared/pid_mapping.json"  # Persists on host
+  study_description: "CORRECT Study Treatment Plan"
 
   rules:
     remove_tags:

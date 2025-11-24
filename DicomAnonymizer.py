@@ -58,10 +58,14 @@ class DicomAnonymizer:
         dicom_obj.PatientID = anonymized_id
         dicom_obj.PatientName = anonymized_id
         
+        # Set StudyDescription if configured
+        if "study_description" in self.config:
+            dicom_obj.StudyDescription = self.config["study_description"]
+        
         logger.debug(f"Applied consistent anonymized ID: {anonymized_id}")
         
         for tag in self.tags_to_remove:
-            if tag in ['PatientID', 'PatientName']:
+            if tag in ['PatientID', 'PatientName', 'StudyDescription']:
                 continue
             if hasattr(dicom_obj, tag):
                 delattr(dicom_obj, tag)
