@@ -4,7 +4,7 @@ dicom_listener:
   # TCP port for the DICOM listener
   port: 11112
   # AE Title for the DICOM listener
-  ae_title: CONNECT
+  ae_title: CORRECT
 
 dicom_destination:
   # IP address of the remote DICOM destination
@@ -15,7 +15,7 @@ dicom_destination:
   ae_title: RADIORIIPL
   
 watcher:
-  debounce_interval_seconds: 25
+  debounce_interval_seconds: 30
   min_file_count_for_processing: 10
 
 processing:
